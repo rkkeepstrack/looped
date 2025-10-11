@@ -9,9 +9,11 @@ import SwiftUI
 
 @main
 struct loopedApp: App {
+	@StateObject private var audioEngineController = AudioEngineController()
+	
     var body: some Scene {
         WindowGroup {
-            ContentView()
+			ContentView(audioPlayer: audioEngineController)
         }
     }
 }
