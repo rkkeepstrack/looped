@@ -15,20 +15,21 @@ import Foundation
 import SwiftUI
 
 class AudioEngineController: ObservableObject {
-	let engine = AVAudioEngine()
-	let player = AVAudioPlayerNode()
-	@Published var timePitch = AVAudioUnitTimePitch()
-	var audioFile: AVAudioFile?
+
+	@Published public var isPlaying = false
+	@Published public var rate: Float = 1.0
+	@Published public var timePitch = AVAudioUnitTimePitch()
+
+	@Published public var loopStart: TimeInterval = 0
+	@Published public var loopEnd: TimeInterval = 0
+	@Published public var currentTime: TimeInterval = 0
+	@Published public var currentFileName: String?
+	@Published public var audioFile: AVAudioFile?
+	var pausedTime: TimeInterval = 0.0
+
+	private let engine = AVAudioEngine()
+	private let player = AVAudioPlayerNode()
 	private var segmentStartTime: TimeInterval = 0
-
-	@Published var isPlaying = false
-	@Published var rate: Float = 1.0
-
-	@Published var loopStart: TimeInterval = 0
-	@Published var loopEnd: TimeInterval = 0
-	@Published var currentTime: TimeInterval = 0
-	@Published var currentFileName: String?
-
 	private var loopTimer: Timer?
 	private var timeUpdateTimer: Timer?
 
@@ -67,23 +68,31 @@ class AudioEngineController: ObservableObject {
 		guard audioFile != nil else { return }
 		// Play
 		if isPlaying == false {
-			if player.lastRenderTime == nil { // means nothing is scheduled
-				if let file = audioFile {
-					player.scheduleFile(file, at: nil)
-				}
-			}
-			player.play()
-			isPlaying = true
-			startUpdatingCurrentTime()
-			return
+			self.play()
+		} else {
+			self.pause()
 		}
 
-		if isPlaying {
-			segmentStartTime = currentTime
-			player.pause()
-			isPlaying = false
-			stopUpdatingCurrentTime()
+
+	}
+	
+	private func play() {
+		if player.lastRenderTime == nil { // means nothing is scheduled
+			if let file = audioFile {
+				player.scheduleFile(file, at: nil)
+			}
 		}
+		player.play()
+		isPlaying = true
+		startUpdatingCurrentTime()
+		return
+	}
+	
+	private func pause() {
+		segmentStartTime = currentTime
+		player.pause()
+		isPlaying = false
+		stopUpdatingCurrentTime()
 	}
 
 	func stop() {
@@ -117,9 +126,9 @@ class AudioEngineController: ObservableObject {
 		timeUpdateTimer = nil
 	}
 
-	func getCurrentTime() -> TimeInterval? {
+	private func getCurrentTime() -> TimeInterval? {
 		guard let nodeTime = player.lastRenderTime,
-		      let playerTime = player.playerTime(forNodeTime: nodeTime) else { return nil }
+				let playerTime = player.playerTime(forNodeTime: nodeTime) else { return nil }
 		let rateAdjustedTime = Double(playerTime.sampleTime) / (playerTime.sampleRate * Double(timePitch.rate))
 		return segmentStartTime + rateAdjustedTime
 	}
@@ -165,7 +174,7 @@ class AudioEngineController: ObservableObject {
 		}
 	}
 
-	// MARK: - Duration Loader
+	// MARK: Load Duration
 
 	func loadDuration() async {
 		guard let url = audioFile?.url else { return }
@@ -183,24 +192,14 @@ class AudioEngineController: ObservableObject {
 		return currentTime >= duration
 	}
 
-	// MARK: - Waveform Generation
 
-	func generateWaveformSamples(width: Int) -> [CGFloat] {
-		guard let file = audioFile else { return [] }
-		let frameCount = Int(file.length)
-		let downSample = max(frameCount / width, 1)
-		var samples: [CGFloat] = []
-		file.framePosition = 0
-		let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(frameCount))!
-		try? file.read(into: buffer)
-		if let channelData = buffer.floatChannelData?[0] {
-			for i in stride(from: 0, to: frameCount, by: downSample) {
-				let end = min(i + downSample, frameCount)
-				let slice = Array(UnsafeBufferPointer(start: channelData + i, count: end - i))
-				let maxSample = slice.map { abs($0) }.max() ?? 0
-				samples.append(CGFloat(maxSample))
-			}
-		}
-		return samples
+	// MARK: Getters
+
+	func getProgressInPercent() -> Double {
+		return currentTime / (getDuration() ?? 1)
+	}
+
+	func getDuration() -> TimeInterval? {
+		return duration ?? nil
 	}
 }
