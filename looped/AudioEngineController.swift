@@ -29,7 +29,7 @@ class AudioEngineController: ObservableObject {
 
 	private let engine = AVAudioEngine()
 	private let player = AVAudioPlayerNode()
-	private var segmentStartTime: TimeInterval = 0
+	private var lastPausedTime: TimeInterval = 0
 	private var loopTimer: Timer?
 	private var timeUpdateTimer: Timer?
 
@@ -64,16 +64,13 @@ class AudioEngineController: ObservableObject {
 
 	// MARK: - Playback
 
-	func togglePlayPause() {
+	func togglePlayPause() -> Void {
 		guard audioFile != nil else { return }
-		// Play
 		if isPlaying == false {
 			self.play()
 		} else {
 			self.pause()
 		}
-
-
 	}
 	
 	private func play() {
@@ -82,14 +79,14 @@ class AudioEngineController: ObservableObject {
 				player.scheduleFile(file, at: nil)
 			}
 		}
+
 		player.play()
 		isPlaying = true
 		startUpdatingCurrentTime()
-		return
 	}
 	
 	private func pause() {
-		segmentStartTime = currentTime
+		
 		player.pause()
 		isPlaying = false
 		stopUpdatingCurrentTime()
@@ -98,7 +95,7 @@ class AudioEngineController: ObservableObject {
 	func stop() {
 		player.stop()
 		stopUpdatingCurrentTime()
-		segmentStartTime = 0
+		lastPausedTime = 0
 		currentTime = 0
 		isPlaying = false
 	}
@@ -113,7 +110,7 @@ class AudioEngineController: ObservableObject {
 		timeUpdateTimer?.invalidate()
 		timeUpdateTimer = Timer.scheduledTimer(withTimeInterval: 0.03, repeats: true) { [weak self] _ in
 			guard let self = self else { return }
-			currentTime = self.getCurrentTime() ?? segmentStartTime
+			currentTime = self.getCurrentTime() ?? lastPausedTime
 
 			if reachedEndOfFile() {
 				self.stop()
@@ -130,7 +127,7 @@ class AudioEngineController: ObservableObject {
 		guard let nodeTime = player.lastRenderTime,
 				let playerTime = player.playerTime(forNodeTime: nodeTime) else { return nil }
 		let rateAdjustedTime = Double(playerTime.sampleTime) / (playerTime.sampleRate * Double(timePitch.rate))
-		return segmentStartTime + rateAdjustedTime
+		return lastPausedTime + rateAdjustedTime
 	}
 
 	// MARK: - Jump
@@ -143,6 +140,7 @@ class AudioEngineController: ObservableObject {
 		if isPlaying {
 			wasPlaying = true
 			player.stop()
+			self.stopUpdatingCurrentTime()
 		}
 		// Calculate start frame from time
 		let startFrame = AVAudioFramePosition(time * file.processingFormat.sampleRate)
@@ -163,13 +161,14 @@ class AudioEngineController: ObservableObject {
 				player.scheduleBuffer(buffer, at: nil, options: .interrupts) {
 					// optional: callback when finished
 				}
-				segmentStartTime = time
+				lastPausedTime = time
 				currentTime = time
 			} catch {
 				print("Error reading buffer: \(error)")
 			}
 		}
 		if wasPlaying {
+			self.startUpdatingCurrentTime()
 			player.play()
 		}
 	}
