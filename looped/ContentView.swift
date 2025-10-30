@@ -14,16 +14,18 @@ internal import AVFAudio
 struct ContentView: View {
 	@ObservedObject var audioPlayer: AudioEngineController
 	@State private var lastClickedTime = 0
-	@State private var sliderPos: Double = 0.5 // normalized 0…1
+	@State private var rateSliderPosition: Double = 0.5 // normalized 0…1
+	@State private var volumeSliderPosition: Float = 0.5
 	@State private var waveformWidth = CGFloat(0)
-
+	
 	@State private var currentScrollOffset: CGFloat = 0
 	@State private var lastCalculatedOffsetBeforeScroll: Double = 0
 	@State private var lastCalculatedTimeBeforeScroll: Double = 0
+	@State private var lastProgressInPercentBeforeScroll: CGFloat = 0
 	@State private var isScrolling: Bool = false
-
+	
 	let formatter = DateComponentsFormatter()
-
+	
 	var body: some View {
 		VStack(spacing: 20) {
 			header
@@ -35,9 +37,9 @@ struct ContentView: View {
 		// Keyboard shortcuts
 		.background(KeyboardHandler(audioPlayer: audioPlayer))
 	}
-
+	
 	// MARK: Header
-
+	
 	private var header: some View {
 		VStack {
 			Button("Load Audio File") {
@@ -45,11 +47,11 @@ struct ContentView: View {
 					await audioPlayer.openFile()
 				}
 			}.buttonStyle(.borderedProminent)
-
+			
 			if let fileName = audioPlayer.currentFileName {
 				Text("Loaded: \(fileName)")
 			}
-
+			
 			if audioPlayer.audioFile?.url != nil {
 				HStack {
 					Text(String(formatDuration(time: audioPlayer.currentTime))).padding()
@@ -60,18 +62,29 @@ struct ContentView: View {
 			}
 		}
 	}
-
+	
 	// MARK: Waveform
-
+	
 	private var waveform: some View {
 		ZStack {
 			if let url = audioPlayer.audioFile?.url {
 				GeometryReader { geo in
 					ZStack {
 						DSWaveformImageViews.WaveformView(audioURL: url) { waveformShape in
-							waveformShape.fill(Color.blue.opacity(0.5))
+							waveformShape.fill(
+								LinearGradient(
+									stops: [
+										Gradient.Stop(color: .red, location: 0),
+										Gradient.Stop(color: .red, location: calculateGradientWhileScrolling()),
+										Gradient.Stop(color: .blue, location: calculateGradientWhileScrolling() + 0.0001),
+										Gradient.Stop(color: .blue, location: 1)
+											 ],
+									startPoint: .leading,
+									endPoint: .trailing
+								)
+							)
 						}.offset(x: calculateOffsetForWaveform())
-
+						
 						Rectangle().fill(.yellow).frame(width: 1)
 					}.onAppear {
 						waveformWidth = geo.size.width
@@ -89,24 +102,26 @@ struct ContentView: View {
 			)
 		}
 	}
-
+	
 	// MARK: Controls
-
+	
 	private var controls: some View {
 		VStack {
 			HStack {
-				Button(audioPlayer.isPlaying ? "Pause" : "Play") {
-					audioPlayer.togglePlayPause()
+				Button(action: {audioPlayer.togglePlayPause()} ) {
+					audioPlayer.isPlaying ? Image(systemName: "pause.fill"): Image(systemName: "play.fill")
 				}
-				Button("Stop") {
+				Button(action: {
 					audioPlayer.stop()
 					currentScrollOffset = 0
+				}) {
+					Image(systemName:"stop.fill")
 				}
 			}
-
+			
 			VStack {
-				Slider(value: $sliderPos) { _ in
-					audioPlayer.rate = Float(0.5 * pow(4, sliderPos)) // logarithmic scale to keep thumb in the middle
+				Slider(value: $rateSliderPosition) { _ in
+					audioPlayer.rate = Float(0.5 * pow(4, rateSliderPosition)) // logarithmic scale to keep thumb in the middle
 					audioPlayer.updateRate()
 				}
 				.tint(.blue)
@@ -114,52 +129,68 @@ struct ContentView: View {
 					Button("Reset Playback Speed") {
 						audioPlayer.rate = 1
 						audioPlayer.updateRate()
-						sliderPos = 0.5
+						rateSliderPosition = 0.5
 					}
 					Text(String(format: "Playback Speed: %.2fx", audioPlayer.rate))
 				}
+				Slider(value: $volumeSliderPosition, in: 0...1, onEditingChanged: { _ in
+					audioPlayer.updateVolume(volume: volumeSliderPosition)
+				})
+				.tint(.blue)
+				
 			}
+			
 		}
 	}
-
+	
 	// MARK: Utils
-
+	
 	func onScrollEnd() {
 		audioPlayer.jumpTo(time: calculateScrolledTimestamp())
 		currentScrollOffset = 0
 		isScrolling = false
 	}
-
+	
 	func onScrollChange(newOffset _: CGFloat) {
 		if !isScrolling {
 			lastCalculatedOffsetBeforeScroll = calculateOffsetForWaveform()
 			lastCalculatedTimeBeforeScroll = audioPlayer.currentTime
+			lastProgressInPercentBeforeScroll = audioPlayer.getProgressInPercent()
 		}
 		isScrolling = true
 	}
-
+	
 	func calculateOffsetForWaveform() -> Double {
 		/**
 		 First, we have to move the Waveform so that the Iterator is right in the middle and the waveform next to it.
 		 This happens by adding the offset waveformWidth / 2.
-
+		 
 		 Next, we need to account for any movements that happen during scrolling, which is the scrollOffset.
-
+		 
 		 Finally, the Waveform has to move gradually as the Audiofile progresses (it progresses by moving left = negatively)
 		 This is done by getting the current percentage that has already played and then multiplying it by the total width of the waveform.
-
+		 
 		 To suppress the gradually movement by progress when scrolling,  the lastCalculatedOffsetBeforeScroll is used in that case.
 		 */
 		if isScrolling {
 			return lastCalculatedOffsetBeforeScroll + currentScrollOffset
 		}
-
+		
 		let placeStartOfWaveformToCenter = waveformWidth / 2
 		let progressInRelationToWidth = audioPlayer.getProgressInPercent() * waveformWidth
 		let currentCalculatedOffset = placeStartOfWaveformToCenter - progressInRelationToWidth + currentScrollOffset
 		return currentCalculatedOffset
 	}
+	
+	func calculateGradientWhileScrolling() -> CGFloat {
+		let progressInPercent = audioPlayer.getProgressInPercent()
+		if !isScrolling {
+			return CGFloat(progressInPercent)
+		}
 
+		return CGFloat(lastProgressInPercentBeforeScroll - currentScrollOffset / waveformWidth)
+	}
+	
 	/**
 	 Returns the Timestamp at the Iterator in the center.
 	 */
@@ -169,7 +200,7 @@ struct ContentView: View {
 		let scrolledTime = duration * (offset / waveformWidth) + lastCalculatedTimeBeforeScroll
 		return scrolledTime
 	}
-
+	
 	func formatDuration(time: TimeInterval?) -> String {
 		let formatter = DateComponentsFormatter()
 		formatter.allowedUnits = [.minute, .second]

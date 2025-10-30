@@ -103,6 +103,10 @@ class AudioEngineController: ObservableObject {
 	func updateRate() {
 		timePitch.rate = rate
 	}
+	
+	func updateVolume(volume: Float) {
+		player.volume = volume
+	}
 
 	// MARK: - Timers
 
