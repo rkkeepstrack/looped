@@ -68,4 +68,11 @@ internal class OffsetCalculator: ObservableObject {
 		return currentCalculatedOffset
 	}
 	
+	func calculateOffsetForLoopPoint(time: TimeInterval, duration: TimeInterval) -> Double {
+		let offsetInPercent = time / duration // length ratio in relation to total audio length
+		let offsetX = offsetInPercent * waveformWidth // length ratio in relation to total waveformWidth
+		
+		return offsetX
+	}
+	
 }

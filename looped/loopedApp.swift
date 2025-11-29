@@ -14,7 +14,12 @@ struct loopedApp: App {
 
 	var body: some Scene {
 		WindowGroup {
-			ContentView().environmentObject(audioEngineController).environmentObject(offsetCalculator)
+			GeometryReader { g in
+				ContentView().environmentObject(audioEngineController).environmentObject(offsetCalculator)
+			}.frame(minWidth: 1024, maxWidth: .infinity, minHeight: 800, maxHeight: .infinity)
+				.padding(.horizontal, 20)
+				.cornerRadius(12)
+				.shadow(radius: 5)
 		}
 	}
 }

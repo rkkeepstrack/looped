@@ -18,7 +18,7 @@ struct ControlsView: View {
 		VStack {
 			HStack {
 				Button(action: {audioPlayer.togglePlayPause()} ) {
-					audioPlayer.isPlaying ? Image(systemName: "pause.fill"): Image(systemName: "play.fill")
+					Image(systemName: audioPlayer.isPlaying ? "pause.fill" : "play.fill")
 				}
 				Button(action: {
 					audioPlayer.stop()
@@ -48,7 +48,18 @@ struct ControlsView: View {
 				.tint(.blue)
 				
 			}
-			
+			HStack {
+				Button(action: {audioPlayer.setLoopStart(time: audioPlayer.currentTime)}) {
+					Image(systemName: audioPlayer.loopStart.1 != nil ? "a.circle.fill" : "a.circle")
+				}
+				Button(action: {audioPlayer.setLoopEnd(time: audioPlayer.currentTime)}) {
+					Image(systemName: audioPlayer.loopEnd.1 != nil ? "b.circle.fill" : "b.circle")
+				}
+				Button("Reset") {
+					audioPlayer.setLoopStart(time: nil)
+					audioPlayer.setLoopEnd(time: nil)
+				}
+			}
 		}
 	}
 }
