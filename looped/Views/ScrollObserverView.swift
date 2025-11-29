@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 /// A SwiftUI view that captures global scroll events (trackpad or mouse wheel)
-struct ScrollCaptureView: NSViewRepresentable {
+struct ScrollObserverView: NSViewRepresentable {
 	@Binding var offset: CGFloat
 	var onScrollChange: ((CGFloat) -> Void)? = nil
 	var onScrollEnd: (() -> Void)? = nil

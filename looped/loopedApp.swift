@@ -10,10 +10,11 @@ import SwiftUI
 @main
 struct loopedApp: App {
 	@StateObject private var audioEngineController = AudioEngineController()
+	@StateObject private var offsetCalculator = OffsetCalculator()
 
 	var body: some Scene {
 		WindowGroup {
-			ContentView(audioPlayer: audioEngineController)
+			ContentView().environmentObject(audioEngineController).environmentObject(offsetCalculator)
 		}
 	}
 }
