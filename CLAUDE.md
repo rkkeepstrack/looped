@@ -53,10 +53,12 @@ be mocked.
   calls on the injected services. Owns no audio graph and no view layout.
 - **`WaveformViewModel`** (`ViewModels/WaveformViewModel.swift`) — pure view-math for the waveform
   (was `OffsetCalculator`). Maps playback progress ↔ horizontal scroll offset so the waveform pans
-  under a fixed center iterator; computes loop-point x-positions. The waveform is rendered `zoom`×
-  wider than the viewport (`contentWidth = waveformWidth * zoom`) so it pans faster (`waveformWidth`
-  = viewport width, for centering only). Publishes `isScrolling`, `currentScrollOffset`,
-  `waveformWidth`, `zoom`.
+  under a fixed center iterator; computes loop-point x-positions. The render width
+  `contentWidth = min(songDuration × pixelsPerSecond, maxContentWidth)` depends only on the audio,
+  **not the viewport** — so resizing the window / toggling the sidebar only re-centers (a cheap
+  offset recalc) and never re-analyzes or repaints the bars. `waveformWidth` is the live viewport
+  width, used only to center the playhead. Publishes `isScrolling`, `currentScrollOffset`,
+  `waveformWidth`, `songDuration`.
 
 **Services** (plain, protocol-backed, no SwiftUI):
 
@@ -80,17 +82,17 @@ be mocked.
 
 | File | Role |
 |---|---|
-| `looped/loopedApp.swift` | `@main` App; composition root (build services → inject view-models); window sizing. |
+| `looped/loopedApp.swift` | `@main` App; composition root (build services → inject view-models); window sizing, dark scheme, `Theme.background`. |
 | `looped/Models/LoadedAudio.swift` | Value type: decoded file + buffer + format + duration. |
 | `looped/Services/PlaybackService.swift` | `PlaybackService` protocol + `AVPlaybackService`: audio graph, transport, loop scheduling, playback clock. |
 | `looped/Services/AudioFileService.swift` | `AudioFileService` protocol + default: `async` URL → `LoadedAudio` decode. |
 | `looped/Services/LoopingService.swift` | `LoopingService` protocol + default: pure loop-buffer slicing + seam crossfade. |
 | `looped/ViewModels/PlayerViewModel.swift` | Playback state/intents/timer; drives the services (see Architecture). |
 | `looped/ViewModels/WaveformViewModel.swift` | Waveform pan / zoom / loop-point offset math (was `OffsetCalculator`). |
-| `looped/Views/ContentView.swift` | Main layout: header (Load/status) + waveform + controls; hosts `KeyboardHandler`. |
-| `looped/Views/ControlsView.swift` | Play/pause/stop, speed slider (log ~0.5×–2×), volume slider, A/B loop buttons. |
+| `looped/Views/ContentView.swift` | Root layout: animated collapsible **`Sidebar`** (private; import button now, track list in Plan 5) + a top-left toggle (`@AppStorage "sidebarOpen"`) + centered header (name + `currentTime | fileTime`) + waveform + bottom bar; hosts `KeyboardHandler`. |
+| `looped/Views/ControlsView.swift` | The bottom bar: Volume + Pitch (=rate, log ~0.5×–2×) `CompactSlider`s bottom-left, play/pause + stop center, `LoopPanel` (A/B + Reset, disabled `«`/`»` nudge arrows reserved for Plan 5) bottom-right. `CompactSlider`/`LoopPanel` are private. |
 | `looped/Views/WaveformView.swift` | **`WaveformDisplayView`** + private **`StripedWaveform`** (`Equatable`, `.drawingGroup()`-cached layer running its own `WaveformAnalyzer` w/ configurable `noiseFloorDecibelCutoff`, rendering a `WaveformShape`). SoundCloud-style upcoming/played layers + mask, A/B markers, shaded loop region; drives scroll via `ScrollObserverView`. |
-| `looped/Views/Theme.swift` | Shared design tokens (`enum Theme`): warm-orange-on-black palette + waveform colors. |
+| `looped/Views/Theme.swift` | Shared design tokens (`enum Theme`): warm-orange-on-black palette, waveform colors, and layout metrics (sidebar width, panel corner/border). |
 | `looped/Views/ScrollObserverView.swift` | `NSViewRepresentable` capturing scroll-wheel + mouse-drag → `WaveformViewModel`. |
 | `looped/Utils/KeyboardHandler.swift` | `NSViewRepresentable` global key monitor; spacebar → play/pause. |
 | `looped/Utils/TimeFormatter.swift` | `enum TimeFormatter`: formats playback times as `m:ss`. |

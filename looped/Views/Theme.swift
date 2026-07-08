@@ -31,4 +31,17 @@ enum Theme {
 	static let loopMarkerB = Color(red: 1.0, green: 0.66, blue: 0.30) // lighter amber
 	/// Fixed center playhead line.
 	static let iterator = Color.white.opacity(0.85)
+
+	// MARK: Metrics
+
+	static let sidebarWidth: CGFloat = 220
+	static let panelCorner: CGFloat = 12
+	static let panelBorder = Color.white.opacity(0.08)
+
+	// MARK: Animation
+
+	/// Sidebar open/close timing. Shared by the layout animation and the matching
+	/// window during which the waveform's render width is frozen (so they align).
+	static let sidebarAnimationDuration: Double = 0.28
+	static let sidebarAnimation: Animation = .easeInOut(duration: sidebarAnimationDuration)
 }

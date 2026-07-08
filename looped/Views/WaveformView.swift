@@ -32,9 +32,10 @@ struct WaveformDisplayView: View {
 				GeometryReader { geo in
 					let viewportWidth = geo.size.width
 					let height = geo.size.height
-					// The whole song is rendered `zoom` × wider than the viewport so
-					// it pans faster. `contentWidth` is that full rendered width.
-					let contentWidth = viewportWidth * offsetCalculator.zoom
+					// Render width comes from the view-model (`waveformWidth × zoom`),
+					// which can be *held* during the sidebar animation so the bars
+					// don't re-analyze/re-stroke while it slides.
+					let contentWidth = offsetCalculator.contentWidth
 
 					ZStack {
 						// Panning layer: the waveform + loop markers slide horizontally
@@ -51,9 +52,15 @@ struct WaveformDisplayView: View {
 							.frame(width: 2)
 					}
 					.clipped()
-					.onAppear { offsetCalculator.waveformWidth = viewportWidth }
+					.onAppear {
+						offsetCalculator.viewportWidthChanged(viewportWidth)
+						offsetCalculator.songDuration = audioPlayer.duration ?? 0
+					}
 					.onChange(of: viewportWidth) { _, newWidth in
-						offsetCalculator.waveformWidth = newWidth
+						offsetCalculator.viewportWidthChanged(newWidth)
+					}
+					.onChange(of: audioPlayer.duration) { _, newDuration in
+						offsetCalculator.songDuration = newDuration ?? 0
 					}
 				}
 			} else {

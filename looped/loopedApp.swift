@@ -19,15 +19,12 @@ struct loopedApp: App {
 
 	var body: some Scene {
 		WindowGroup {
-			GeometryReader { _ in
-				ContentView()
-					.environmentObject(player)
-					.environmentObject(waveform)
-			}
-			.frame(minWidth: 1024, maxWidth: .infinity, minHeight: 800, maxHeight: .infinity)
-			.padding(.horizontal, 20)
-			.cornerRadius(12)
-			.shadow(radius: 5)
+			ContentView()
+				.environmentObject(player)
+				.environmentObject(waveform)
+				.frame(minWidth: 1024, minHeight: 800)
+				.background(Theme.background)
+				.preferredColorScheme(.dark)
 		}
 	}
 }

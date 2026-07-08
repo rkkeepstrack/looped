@@ -4,8 +4,13 @@
 //
 //  Presentation math for the waveform (was `OffsetCalculator`): maps playback
 //  progress ↔ horizontal scroll offset so the waveform pans under a fixed center
-//  iterator, and computes loop-point x-positions. The waveform is rendered
-//  `zoom`× wider than the viewport (`contentWidth`) so it pans faster.
+//  iterator, and computes loop-point x-positions.
+//
+//  The render width (`contentWidth`) depends only on the *audio* (duration ×
+//  `pixelsPerSecond`), NOT the viewport — so resizing the window or toggling the
+//  sidebar only re-centers/pans (a cheap offset recalculation) and never forces
+//  the waveform to re-analyze or repaint. `waveformWidth` is the live viewport
+//  width, used solely to keep the playhead centered.
 //
 
 internal import Combine
@@ -14,18 +19,26 @@ import SwiftUI
 final class WaveformViewModel: ObservableObject {
 	@Published var isScrolling: Bool = false
 	@Published var currentScrollOffset: CGFloat = 0
-	/// Width of the visible viewport (set from the container's geometry). Used
-	/// only for centering the playhead.
+	/// Live viewport width — used only to center the playhead.
 	@Published var waveformWidth: CGFloat = 0
-	/// Horizontal zoom: the waveform is rendered `zoom` × wider than the viewport,
-	/// so the whole song spans `zoom` screen-widths and pans faster. Higher = more
-	/// zoomed in = faster horizontal scroll.
-	@Published var zoom: CGFloat = 12
+	/// Song length in seconds; the render width derives from this.
+	@Published var songDuration: TimeInterval = 0
 
-	/// Full rendered width of the waveform (the entire song), across which
-	/// progress, loop points, and scrubbing are measured.
+	/// Horizontal scale: waveform pixels per second of audio. Higher = wider
+	/// waveform = more zoom and faster horizontal scroll.
+	var pixelsPerSecond: CGFloat = 100
+	/// Cap so very long songs don't produce an enormous (slow) render.
+	private let maxContentWidth: CGFloat = 12000
+
+	/// Full rendered width of the waveform (the whole song). Depends only on the
+	/// song, so it's constant across viewport changes → no repaint on resize.
 	var contentWidth: CGFloat {
-		waveformWidth * zoom
+		min(CGFloat(songDuration) * pixelsPerSecond, maxContentWidth)
+	}
+
+	/// Called on appear and whenever the container width changes (centering only).
+	func viewportWidthChanged(_ width: CGFloat) {
+		waveformWidth = width
 	}
 
 	// internal state
