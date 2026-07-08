@@ -17,9 +17,9 @@ bounds (scrubbing out of range can't crash the player).
 - Single dependency: **DSWaveformImage** v14.2.2 (`https://github.com/dmrschmidt/DSWaveformImage`).
 - Build system: **Swift Package Manager** (no `.xcodeproj`). Language mode **5** (`swiftLanguageModes:
   [.v5]`) — the sources predate Swift 6 strict concurrency. Bundle id `RK.looped`.
-- Tooling: `just` (command interface), `swift`/SwiftPM, `swiftformat`. Building still needs the full
-  **Xcode toolchain** (not just Command Line Tools); the `justfile` exports `DEVELOPER_DIR`. Edit in
-  any editor (Zed etc.) — Xcode is not required.
+- Tooling: `just` (command interface), `swift`/SwiftPM, `swiftformat`. Build, run, *and* test all work
+  on just the **Command Line Tools** — no full Xcode. Tests use **Swift Testing** (a pinned source
+  dependency), not XCTest, so `swift test` needs no Xcode-only frameworks. Edit in any editor (Zed etc.).
 
 ## Directory layout
 
@@ -29,15 +29,18 @@ Standard SwiftPM layout, everything under the repo/git root (this file, `Package
   `ViewModels/`, `Views/`, `Utils/` (+ `Assets.xcassets`, excluded from the build).
 - **`Tests/loopedTests/`** — unit tests (module `loopedTests`): `Services/`, `ViewModels/`,
   `Support/`, `Views/`.
-- **`plans/`** — roadmap/plan docs (`00-README.md` first). **`scripts/`** — `make-app.sh` (bundler).
+- **`plans/`** — roadmap/plan docs (`00-README.md` first).
 
 ## Build & Run
 
-Everything runs through **`just`** (see `justfile`); run `just` alone to list recipes.
+Prerequisites: the **Command Line Tools** (`xcode-select --install`) and `brew bundle` (installs
+`just` + `swiftformat`). No full Xcode needed — build, run, and test all work on the CLT. Everything
+runs through **`just`** (see `justfile`); run `just` alone to list recipes. Quickstart lives in
+`README.md`.
 
 ```bash
 just build          # swift build (debug)
-just run            # build a .app bundle (scripts/make-app.sh) and open it — proper GUI app
+just run            # build a .app bundle (inlined in the justfile) and open it — proper GUI app
 just test           # swift test — headless unit tests, no Xcode (pass args: just test --filter Looping)
 just format         # swiftformat .   (just format-check to lint only)
 just clean          # swift package clean + remove .build/Looped.app
@@ -116,13 +119,20 @@ be mocked.
 | `Sources/looped/Utils/TimeFormatter.swift` | `enum TimeFormatter`: formats playback times as `m:ss`. |
 
 **Build/tooling files:** `Package.swift` (SwiftPM manifest: exe target `looped` + test target
-`loopedTests`, DSWaveformImage dep, `swiftLanguageModes: [.v5]`), `justfile` (command interface),
-`scripts/make-app.sh` (assembles the `.app` bundle for `just run`), `.swiftformat` (repo-root config).
+`loopedTests`, deps DSWaveformImage + `swift-testing` (pinned `.exact("6.1.3")`), `swiftLanguageModes:
+[.v5]`), `justfile` (command interface;
+the `bundle` recipe assembles the `.app` for `just run`, in Python via `plistlib`), `.swiftformat`
+(repo-root config), `Brewfile` (`just` + `swiftformat`, via `brew bundle`), `README.md` (quickstart).
 
 ## Tests
 
-The **`loopedTests`** SwiftPM test target (`@testable import looped`) runs **headless** via
-`just test` / `swift test` — no Xcode, no app host, no audio device (~0.04s). Two layers:
+The **`loopedTests`** SwiftPM test target (`@testable import looped`) uses **Swift Testing**
+(`@Test`/`#expect`, not XCTest) and runs **headless** via `just test` / `swift test` — no Xcode, no
+app host, no audio device (~0.03s once built). Swift Testing comes from the pinned `swift-testing`
+source dependency (so the CLT, which lacks both XCTest and the toolchain's bundled Testing, suffice).
+Gotchas: the first build compiles `swift-testing` + SwiftSyntax from source (slower, then cached);
+**switching toolchains** (CLT ↔ Xcode) needs `just clean` first — the macro plugin cache is
+toolchain-specific. Two layers:
 
 _Pure services_ (dependency-free logic):
 - `Tests/loopedTests/Services/WaveformServiceTests.swift` — window math (bucket alignment,

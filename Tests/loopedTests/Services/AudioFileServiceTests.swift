@@ -9,51 +9,48 @@
 
 import AVFoundation
 @testable import looped
-import XCTest
+import Testing
 
-@MainActor
-final class AudioFileServiceTests: XCTestCase {
+struct AudioFileServiceTests {
 	// MARK: - Duration limit (pure)
 
-	func testMaxDurationIsTwentyMinutes() {
-		XCTAssertEqual(DefaultAudioFileService.maxDurationMinutes, 20)
+	@Test func maxDurationIsTwentyMinutes() {
+		#expect(DefaultAudioFileService.maxDurationMinutes == 20)
 	}
 
-	func testExceedsDurationLimitBoundary() {
+	@Test func exceedsDurationLimitBoundary() {
 		let limit = Double(DefaultAudioFileService.maxDurationMinutes) * 60 // 1200 s
-		XCTAssertFalse(DefaultAudioFileService.exceedsDurationLimit(0))
-		XCTAssertFalse(DefaultAudioFileService.exceedsDurationLimit(limit - 0.1))
-		XCTAssertFalse(DefaultAudioFileService.exceedsDurationLimit(limit)) // exactly 20 min is allowed
-		XCTAssertTrue(DefaultAudioFileService.exceedsDurationLimit(limit + 0.001))
-		XCTAssertTrue(DefaultAudioFileService.exceedsDurationLimit(limit * 2))
+		#expect(!DefaultAudioFileService.exceedsDurationLimit(0))
+		#expect(!DefaultAudioFileService.exceedsDurationLimit(limit - 0.1))
+		#expect(!DefaultAudioFileService.exceedsDurationLimit(limit)) // exactly 20 min is allowed
+		#expect(DefaultAudioFileService.exceedsDurationLimit(limit + 0.001))
+		#expect(DefaultAudioFileService.exceedsDurationLimit(limit * 2))
 	}
 
 	// MARK: - Error messages
 
-	func testErrorDescriptions() {
-		XCTAssertEqual(AudioFileServiceError.tooLong(maxMinutes: 20).errorDescription,
-		               "That track is longer than 20 minutes.")
-		XCTAssertEqual(AudioFileServiceError.bufferCreationFailed.errorDescription,
-		               "Couldn't read that audio file.")
+	@Test func errorDescriptions() {
+		#expect(AudioFileServiceError.tooLong(maxMinutes: 20).errorDescription == "That track is longer than 20 minutes.")
+		#expect(AudioFileServiceError.bufferCreationFailed.errorDescription == "Couldn't read that audio file.")
 	}
 
 	// MARK: - Happy-path decode
 
-	func testLoadDecodesAShortFile() async throws {
+	@Test func loadDecodesAShortFile() async throws {
 		let url = try writeTempSine(seconds: 0.25, sampleRate: 8000)
 		defer { try? FileManager.default.removeItem(at: url) }
 
 		let loaded = try await DefaultAudioFileService().load(url: url)
 
-		XCTAssertEqual(loaded.url, url)
-		XCTAssertEqual(loaded.format.sampleRate, 8000, accuracy: 1e-6)
-		XCTAssertEqual(loaded.duration, 0.25, accuracy: 0.02)
-		XCTAssertGreaterThan(loaded.buffer.frameLength, 0)
+		#expect(loaded.url == url)
+		#expect(loaded.format.sampleRate == 8000)
+		#expect(abs(loaded.duration - 0.25) <= 0.02)
+		#expect(loaded.buffer.frameLength > 0)
 	}
 
 	// MARK: - Helpers
 
-	/// Writes `seconds` of a quiet sine to a temp WAV and returns its URL.
+	/// Writes `seconds` of a quiet sine to a unique temp WAV and returns its URL.
 	private func writeTempSine(seconds: Double, sampleRate: Double) throws -> URL {
 		let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1)!
 		let frames = AVAudioFrameCount(seconds * sampleRate)
@@ -65,8 +62,7 @@ final class AudioFileServiceTests: XCTestCase {
 		}
 
 		let url = FileManager.default.temporaryDirectory
-			.appendingPathComponent("looped-test-\(frames).wav")
-		try? FileManager.default.removeItem(at: url)
+			.appendingPathComponent("looped-test-\(UUID().uuidString).wav")
 		let file = try AVAudioFile(forWriting: url, settings: format.settings)
 		try file.write(from: buffer)
 		return url

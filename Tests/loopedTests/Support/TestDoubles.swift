@@ -103,9 +103,10 @@ enum AudioFixture {
 			channel[0][i] = sinf(Float(i) * 0.05) * 0.3
 		}
 
+		// Unique name so concurrently-run tests (Swift Testing parallelizes by
+		// default) never share or clobber the same fixture file.
 		let url = FileManager.default.temporaryDirectory
-			.appendingPathComponent("looped-fixture-\(Int(sampleRate))-\(frames).wav")
-		try? FileManager.default.removeItem(at: url)
+			.appendingPathComponent("looped-fixture-\(UUID().uuidString).wav")
 		let file = try AVAudioFile(forWriting: url, settings: format.settings)
 		try file.write(from: buffer)
 		return url

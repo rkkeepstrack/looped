@@ -9,10 +9,9 @@
 //
 
 @testable import looped
-import XCTest
+import Testing
 
-@MainActor
-final class WaveformServiceTests: XCTestCase {
+struct WaveformServiceTests {
 	private let service = DefaultWaveformService()
 
 	/// The layout used throughout: 100 pt viewport, 100 px/s, scale 2, 2/2 bars.
@@ -26,70 +25,70 @@ final class WaveformServiceTests: XCTestCase {
 		WaveformLayout(viewportWidth: 100, pixelsPerSecond: 100, sampleScale: 2, barWidth: 2, barSpacing: 2)
 	}
 
-	func testLayoutDerivedConstants() {
-		XCTAssertEqual(layout.sampleRate, 200, accuracy: 1e-9)
-		XCTAssertEqual(layout.stripeBucket, 8)
+	@Test func layoutDerivedConstants() {
+		#expect(layout.sampleRate == 200)
+		#expect(layout.stripeBucket == 8)
 	}
 
-	func testWindowGeometryAtOneSecond() {
+	@Test func windowGeometryAtOneSecond() {
 		let win = service.window(samples: [], layout: layout, centerTime: 1.0, playbackTime: 1.0)
 
-		XCTAssertEqual(win.width, 108, accuracy: 1e-6)
-		XCTAssertEqual(win.offset, -2, accuracy: 1e-6)
-		XCTAssertEqual(win.playheadX, 56, accuracy: 1e-6)
-		XCTAssertEqual(win.chunkStartSample, 88, accuracy: 1e-9)
-		XCTAssertEqual(win.samples.count, 216)
+		#expect(win.width == 108)
+		#expect(win.offset == -2)
+		#expect(win.playheadX == 56)
+		#expect(win.chunkStartSample == 88)
+		#expect(win.samples.count == 216)
 	}
 
-	func testEmptySamplesAreAllSilence() {
+	@Test func emptySamplesAreAllSilence() {
 		let win = service.window(samples: [], layout: layout, centerTime: 1.0, playbackTime: 1.0)
 		// 1.0 is the silence sentinel used by the service.
-		XCTAssertTrue(win.samples.allSatisfy { $0 == 1.0 })
+		#expect(win.samples.allSatisfy { $0 == 1.0 })
 	}
 
-	func testChunkStartIsAlwaysBucketAligned() {
+	@Test func chunkStartIsAlwaysBucketAligned() {
 		for center in [0.0, 0.37, 1.0, 5.2, 13.9, 42.0] {
 			let win = service.window(samples: [], layout: layout, centerTime: center, playbackTime: center)
-			XCTAssertEqual(Int(win.chunkStartSample) % layout.stripeBucket, 0,
-			               "chunkStart \(win.chunkStartSample) not aligned to bucket \(layout.stripeBucket)")
+			#expect(Int(win.chunkStartSample) % layout.stripeBucket == 0,
+			        "chunkStart \(win.chunkStartSample) not aligned to bucket \(layout.stripeBucket)")
 		}
 	}
 
-	func testStartOfSongHasNegativeChunkStartAndStableWidth() {
+	@Test func startOfSongHasNegativeChunkStartAndStableWidth() {
 		let win = service.window(samples: [], layout: layout, centerTime: 0.0, playbackTime: 0.0)
 		// Center at t=0: the chunk extends before the song start, so its start is
 		// negative — the out-of-range head is silence-padded, width is unchanged.
-		XCTAssertLessThan(win.chunkStartSample, 0)
-		XCTAssertEqual(Int(win.chunkStartSample) % layout.stripeBucket, 0)
-		XCTAssertEqual(win.width, 108, accuracy: 1e-6)
+		#expect(win.chunkStartSample < 0)
+		#expect(Int(win.chunkStartSample) % layout.stripeBucket == 0)
+		#expect(win.width == 108)
 	}
 
-	func testSamplesAreCopiedAndSilencePaddedPastTheEnd() {
+	@Test func samplesAreCopiedAndSilencePaddedPastTheEnd() {
 		// chunkStart = 88, chunkCount = 216 → reads samples[88 ..< 304].
 		let samples = (0 ..< 300).map(Float.init)
 		let win = service.window(samples: samples, layout: layout, centerTime: 1.0, playbackTime: 1.0)
 
-		XCTAssertEqual(win.samples.count, 216)
-		XCTAssertEqual(win.samples[0], 88, accuracy: 1e-6) // samples[88]
-		XCTAssertEqual(win.samples[211], 299, accuracy: 1e-6) // samples[299] (last in range)
-		XCTAssertEqual(win.samples[212], 1.0, accuracy: 1e-6) // idx 300 → silence
-		XCTAssertEqual(win.samples[215], 1.0, accuracy: 1e-6) // idx 303 → silence
+		#expect(win.samples.count == 216)
+		#expect(win.samples[0] == 88) // samples[88]
+		#expect(win.samples[211] == 299) // samples[299] (last in range)
+		#expect(win.samples[212] == 1.0) // idx 300 → silence
+		#expect(win.samples[215] == 1.0) // idx 303 → silence
 	}
 
-	func testPlayheadIsClampedToTheChunk() {
+	@Test func playheadIsClampedToTheChunk() {
 		// Center held at 1.0 (chunkStart 88); playhead far behind / ahead of it.
 		let behind = service.window(samples: [], layout: layout, centerTime: 1.0, playbackTime: 0.0)
-		XCTAssertEqual(behind.playheadX, 0, accuracy: 1e-6) // (0 - 88)/2 = -44 → clamped to 0
+		#expect(behind.playheadX == 0) // (0 - 88)/2 = -44 → clamped to 0
 
 		let ahead = service.window(samples: [], layout: layout, centerTime: 1.0, playbackTime: 10.0)
-		XCTAssertEqual(ahead.playheadX, 108, accuracy: 1e-6) // (2000 - 88)/2 = 956 → clamped to width
+		#expect(ahead.playheadX == 108) // (2000 - 88)/2 = 956 → clamped to width
 	}
 
-	func testChunkXInvertsBackToPixels() {
+	@Test func chunkXInvertsBackToPixels() {
 		// At the center time, chunkX must equal the (unclamped) playhead position.
-		XCTAssertEqual(service.chunkX(time: 1.0, layout: layout, chunkStartSample: 88), 56, accuracy: 1e-6)
+		#expect(service.chunkX(time: 1.0, layout: layout, chunkStartSample: 88) == 56)
 		// A time before the chunk start is negative (marker off the leading edge) —
 		// chunkX does not clamp, so loop markers can sit off-screen.
-		XCTAssertEqual(service.chunkX(time: 0.0, layout: layout, chunkStartSample: 88), -44, accuracy: 1e-6)
+		#expect(service.chunkX(time: 0.0, layout: layout, chunkStartSample: 88) == -44)
 	}
 }

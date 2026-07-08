@@ -7,14 +7,15 @@ are tagged **[auto]** below — the manual pass is then just a sanity confirmati
 
 ## Unit tests (automated)
 
-Run headless — no Xcode, no app host, no audio device:
+Run headless — no full Xcode (Command Line Tools are enough), no app host, no audio device:
 
 ```bash
 just test                     # → swift test
 just test --filter Looping     # pass args straight through
 ```
 
-The `loopedTests` SwiftPM target has two layers:
+The `loopedTests` SwiftPM target uses **Swift Testing** (`@Test`/`#expect`) rather than
+XCTest — that's what lets it run on the CLT alone. Two layers:
 
 **Pure services** — dependency-free logic, in-memory buffers / tiny temp files:
 

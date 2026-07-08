@@ -11,6 +11,12 @@ let package = Package(
 	],
 	dependencies: [
 		.package(url: "https://github.com/dmrschmidt/DSWaveformImage", from: "14.2.2"),
+		// Swift Testing as a *source* dependency so `swift test` needs no XCTest — and
+		// therefore no full Xcode (the Command Line Tools ship neither XCTest nor the
+		// toolchain's bundled Testing). Pinned to match the CLT's Swift 6.1 toolchain:
+		// 6.2+ tags declare a tools-version newer than 6.1 can parse. Bump when the CLT
+		// advances.
+		.package(url: "https://github.com/swiftlang/swift-testing.git", exact: "6.1.3"),
 	],
 	targets: [
 		.executableTarget(
@@ -27,7 +33,10 @@ let package = Package(
 		),
 		.testTarget(
 			name: "loopedTests",
-			dependencies: ["looped"],
+			dependencies: [
+				"looped",
+				.product(name: "Testing", package: "swift-testing"),
+			],
 			path: "Tests/loopedTests"
 		),
 	],
