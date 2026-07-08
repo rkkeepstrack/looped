@@ -99,6 +99,12 @@ final class PlayerViewModel: ObservableObject {
 	}
 
 	func jumpTo(time: TimeInterval) {
+		// While a loop is active, a scrub stays in the loop rather than tearing it
+		// down (proper in-loop scrubbing + snap-back is Plan 7).
+		guard !playback.isLooping else { return }
+		// Out-of-bounds scrub: keep playing as before (the animated snap-back is
+		// Plan 7). In-bounds: seek. `seek` also clamps defensively against crashes.
+		guard time >= 0, let duration, time <= duration else { return }
 		playback.seek(to: time)
 		currentTime = time
 	}

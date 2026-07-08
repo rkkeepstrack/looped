@@ -91,6 +91,7 @@
 --stored-var-attributes preserve
 --strip-unused-args always
 --struct-threshold 0
+--swiftversion 5.0
 --tab-width unspecified
 --throw-capturing 
 --timezone system

@@ -8,8 +8,9 @@ scrubbing via trackpad/mouse, and spacebar play/pause. It supports **A/B loop po
 both arms a seamless loop by slicing the [A, B) region out of the loaded buffer and scheduling it
 with `AVAudioPlayerNode`'s `.loops` option (`PlayerViewModel` arms it; `LoopingService` slices +
 crossfades the seam so the wrap stays sample-continuous — otherwise `AVAudioUnitTimePitch` warps
-the pitch at the hard cut, especially off 1× speed; `PlaybackService` schedules it). A manual seek
-exits loop mode.
+the pitch at the hard cut, especially off 1× speed; `PlaybackService` schedules it). While a loop
+is armed, scrubbing stays in the loop rather than tearing it down; seeks are clamped to the file
+bounds (scrubbing out of range can't crash the player).
 
 - Platform: macOS only (deployment target **macOS 15.6**), universal (Intel + Apple Silicon).
 - Frameworks: SwiftUI (UI), AppKit (scroll/keyboard capture), AVFoundation (audio), Combine.

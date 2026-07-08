@@ -44,4 +44,7 @@ enum Theme {
 	/// window during which the waveform's render width is frozen (so they align).
 	static let sidebarAnimationDuration: Double = 0.28
 	static let sidebarAnimation: Animation = .easeInOut(duration: sidebarAnimationDuration)
+
+	/// Ease-out for the waveform gliding back to the playhead after a scrub is released.
+	static let scrubSnapBack: Animation = .easeOut(duration: 0.3)
 }

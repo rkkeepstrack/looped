@@ -16,7 +16,7 @@ protocol PlaybackService: AnyObject {
 	func play()
 	func pause()
 	func stop()
-	/// Seek to `time` in the full file; exits loop mode; preserves play state.
+	/// Seek to `time` in the full file (clamped to bounds); preserves play state.
 	func seek(to time: TimeInterval)
 	/// Schedule a pre-sliced loop buffer to repeat seamlessly (`.loops`).
 	func scheduleLoop(_ buffer: AVAudioPCMBuffer, startTime: TimeInterval, length: TimeInterval)
@@ -96,18 +96,21 @@ final class AVPlaybackService: PlaybackService {
 	func seek(to time: TimeInterval) {
 		guard let file else { return }
 
-		// A manual seek leaves loop mode; playback becomes linear again.
-		isLooping = false
-		loopBuffer = nil
+		let sampleRate = file.processingFormat.sampleRate
+		let totalFrames = file.length
+		// Clamp to the file bounds so an out-of-range scrub can't schedule a
+		// negative/overflowing segment (which crashes the player node).
+		let clampedTime = min(max(0, time), Double(totalFrames) / sampleRate)
+		let startFrame = min(max(0, AVAudioFramePosition(clampedTime * sampleRate)), max(0, totalFrames - 1))
+		let frameCount = AVAudioFrameCount(totalFrames - startFrame)
+		guard frameCount > 0 else { return }
 
 		let wasPlaying = player.isPlaying
 		if wasPlaying { player.stop() }
 
-		let startFrame = AVAudioFramePosition(time * file.processingFormat.sampleRate)
-		let frameCount = AVAudioFrameCount(max(0, file.length - startFrame))
 		player.scheduleSegment(file, startingFrame: startFrame, frameCount: frameCount, at: nil, completionHandler: nil)
 		isScheduled = true
-		lastPausedTime = time
+		lastPausedTime = clampedTime
 
 		if wasPlaying { player.play() }
 	}

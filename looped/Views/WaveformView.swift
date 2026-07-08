@@ -86,8 +86,12 @@ struct WaveformDisplayView: View {
 						offset: offsetCalculator.currentScrollOffset,
 						duration: audioPlayer.getDuration()
 					))
-					offsetCalculator.currentScrollOffset = 0
-					offsetCalculator.isScrolling = false
+					// Ease the waveform back to the playhead (esp. after an
+					// out-of-bounds / in-loop scrub that didn't seek).
+					withAnimation(Theme.scrubSnapBack) {
+						offsetCalculator.currentScrollOffset = 0
+						offsetCalculator.isScrolling = false
+					}
 				}
 			)
 		}
