@@ -30,12 +30,18 @@ struct DefaultAudioFileService: AudioFileService {
 	/// Maximum supported track length; longer files are rejected.
 	static let maxDurationMinutes = 20
 
+	/// Whether a track of this length exceeds the supported limit. Pure (no I/O), so
+	/// the boundary is unit-testable without a multi-hundred-MB fixture file.
+	static func exceedsDurationLimit(_ duration: TimeInterval) -> Bool {
+		duration > Double(maxDurationMinutes) * 60
+	}
+
 	func load(url: URL) async throws -> LoadedAudio {
 		let file = try AVAudioFile(forReading: url)
 		let format = file.processingFormat
 
 		let duration = format.sampleRate > 0 ? Double(file.length) / format.sampleRate : 0
-		guard duration <= Double(Self.maxDurationMinutes) * 60 else {
+		guard !Self.exceedsDurationLimit(duration) else {
 			throw AudioFileServiceError.tooLong(maxMinutes: Self.maxDurationMinutes)
 		}
 

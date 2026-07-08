@@ -30,7 +30,11 @@ Run from the repo root (the folder containing `looped.xcodeproj`):
 xcodebuild -project looped.xcodeproj -scheme looped -configuration Debug build   # build
 xcodebuild -project looped.xcodeproj -scheme looped clean                        # clean
 xcodebuild -list                                                                 # list schemes/targets
+xcodebuild test -project looped.xcodeproj -scheme looped -destination 'platform=macOS'   # run unit tests
 ```
+
+If `xcodebuild` errors with "requires Xcode" (Command Line Tools are selected),
+prefix it with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`.
 
 Project, scheme, and target are all named `looped`. For normal development, build & run from
 Xcode (⌘R) — it's a windowed macOS app (min size 1024×800, set in `loopedApp.swift`).
@@ -102,7 +106,23 @@ be mocked.
 | `looped/Utils/KeyboardHandler.swift` | `NSViewRepresentable` global key monitor; spacebar → play/pause. |
 | `looped/Utils/TimeFormatter.swift` | `enum TimeFormatter`: formats playback times as `m:ss`. |
 
-Tests: `tests/Views/ContentViewTests.swift` exists but is **empty** (no tests yet).
+## Tests
+
+A **`loopedTests`** unit-test target (host = the app; `@testable import looped`)
+covers the pure services. Its sources live in `tests/` as a
+`PBXFileSystemSynchronizedRootGroup` attached to the test target — **new files in
+`tests/` are picked up automatically** (no pbxproj edit), the same as `looped/`.
+Run with `xcodebuild test …` (see Build & Run) or ⌘U in Xcode.
+
+- `tests/Services/WaveformServiceTests.swift` — `WaveformService` window math (bucket
+  alignment, offset/playhead, silence padding, `chunkX`).
+- `tests/Services/LoopingServiceTests.swift` — `LoopingService` slice + crossfade seam.
+- `tests/Services/AudioFileServiceTests.swift` — the 20-min limit (pure
+  `DefaultAudioFileService.exceedsDurationLimit`), error strings, a decode happy-path.
+- `tests/Views/ContentViewTests.swift` — placeholder (empty).
+
+The audio engine and view-models aren't unit-tested; see **`TESTING.md`** (repo root)
+for the manual QA checklist that covers them plus looping/waveform behavior.
 
 ## Conventions
 
