@@ -29,7 +29,7 @@ Standard SwiftPM layout, everything under the repo/git root (this file, `Package
   `ViewModels/`, `Views/`, `Utils/` (+ `Assets.xcassets`, excluded from the build).
 - **`Tests/loopedTests/`** — unit tests (module `loopedTests`): `Services/`, `ViewModels/`,
   `Support/`, `Views/`.
-- **`plans/`** — roadmap/plan docs (`00-README.md` first).
+- **`plans/`** — remaining-work docs (`README.md` first).
 
 ## Build & Run
 
@@ -110,8 +110,8 @@ be mocked.
 | `Sources/looped/Services/WaveformService.swift` | `WaveformService` protocol + default: pure whole-song analysis + bucket-aligned window math (`WaveformLayout`/`WaveformWindow`). |
 | `Sources/looped/ViewModels/PlayerViewModel.swift` | Playback state/intents/timer; drives the services (see Architecture). |
 | `Sources/looped/ViewModels/WaveformViewModel.swift` | Waveform observable state + scrubbing/snap-back (was `OffsetCalculator`); delegates windowing/analysis to `WaveformService`. |
-| `Sources/looped/Views/ContentView.swift` | Root layout: animated collapsible **`Sidebar`** (private; import button now, track list in Plan 5) + a top-left toggle (`@AppStorage "sidebarOpen"`) + centered header (name + `currentTime | fileTime`) + waveform + bottom bar; hosts `KeyboardHandler`. |
-| `Sources/looped/Views/ControlsView.swift` | The bottom bar: Volume + Pitch (=rate, log ~0.5×–2×) `CompactSlider`s bottom-left, play/pause + stop center, `LoopPanel` (A/B + Reset, disabled `«`/`»` nudge arrows reserved for Plan 5) bottom-right. `CompactSlider`/`LoopPanel` are private. |
+| `Sources/looped/Views/ContentView.swift` | Root layout: animated collapsible **`Sidebar`** (private; import button now, track list in the player-features plan) + a top-left toggle (`@AppStorage "sidebarOpen"`) + centered header (name + `currentTime | fileTime`) + waveform + bottom bar; hosts `KeyboardHandler`. |
+| `Sources/looped/Views/ControlsView.swift` | The bottom bar: Volume + Pitch (=rate, log ~0.5×–2×) `CompactSlider`s bottom-left, play/pause + stop center, `LoopPanel` (A/B + Reset, disabled `«`/`»` nudge arrows reserved for the player-features plan) bottom-right. `CompactSlider`/`LoopPanel` are private. |
 | `Sources/looped/Views/WaveformView.swift` | **`WaveformDisplayView`** — windowed render: two viewport-sized `WaveformLiveCanvas` layers (gray upcoming + orange played, masked to the playhead) fed the visible sample slice from `WaveformViewModel`, plus A/B markers + shaded loop region (`.position`) and the center iterator; drives scroll via `ScrollObserverView`. |
 | `Sources/looped/Views/Theme.swift` | Shared design tokens (`enum Theme`): warm-orange-on-black palette, waveform colors, and layout metrics (sidebar width, panel corner/border). |
 | `Sources/looped/Views/ScrollObserverView.swift` | `NSViewRepresentable` capturing scroll-wheel + mouse-drag → `WaveformViewModel`. |
