@@ -9,7 +9,7 @@ import AppKit
 import SwiftUI
 
 struct KeyboardHandler: NSViewRepresentable {
-	@ObservedObject var audioPlayer: AudioEngineController
+	@ObservedObject var audioPlayer: PlayerViewModel
 
 	func makeNSView(context: Context) -> NSView {
 		let view = NSView()
@@ -35,5 +35,7 @@ struct KeyboardHandler: NSViewRepresentable {
 	}
 
 	class Coordinator { var eventMonitor: Any? }
-	func makeCoordinator() -> Coordinator { Coordinator() }
+	func makeCoordinator() -> Coordinator {
+		Coordinator()
+	}
 }

@@ -4,78 +4,84 @@ import SwiftUI
 /// A SwiftUI view that captures global scroll events (trackpad or mouse wheel)
 /// **and** horizontal mouse‑dragging to modify an offset.
 struct ScrollObserverView: NSViewRepresentable {
-	 @Binding var offset: CGFloat
-	 var onScrollChange: ((CGFloat) -> Void)? = nil
-	 var onScrollEnd: (() -> Void)? = nil
+	@Binding var offset: CGFloat
+	var onScrollChange: ((CGFloat) -> Void)? = nil
+	var onScrollEnd: (() -> Void)? = nil
 
-	 func makeNSView(context: Context) -> NSView {
-		  let view = ScrollCaptureNSView()
-		  view.offsetBinding = $offset
-		  view.onScrollChange = onScrollChange
-		  view.onScrollEnd = onScrollEnd
-		  return view
-	 }
+	func makeNSView(context _: Context) -> NSView {
+		let view = ScrollCaptureNSView()
+		view.offsetBinding = $offset
+		view.onScrollChange = onScrollChange
+		view.onScrollEnd = onScrollEnd
+		return view
+	}
 
-	 func updateNSView(_ nsView: NSView, context: Context) {
-		  // Nothing to update – the binding is kept live by the view.
-	 }
+	func updateNSView(_: NSView, context _: Context) {
+		// Nothing to update – the binding is kept live by the view.
+	}
 
-	 /// Custom `NSView` that receives both `scrollWheel` and mouse‑dragging.
-	 final class ScrollCaptureNSView: NSView {
-		  // MARK: Properties
-		  var offsetBinding: Binding<CGFloat>!
-		  var onScrollChange: ((CGFloat) -> Void)?
-		  var onScrollEnd: (() -> Void)?
+	/// Custom `NSView` that receives both `scrollWheel` and mouse‑dragging.
+	final class ScrollCaptureNSView: NSView {
+		// MARK: Properties
 
-		  /// Remember the last location while dragging.
-		  private var lastDragLocation: CGPoint?
+		var offsetBinding: Binding<CGFloat>!
+		var onScrollChange: ((CGFloat) -> Void)?
+		var onScrollEnd: (() -> Void)?
 
-		  // MARK: - Initial setup
-		  override init(frame frameRect: NSRect) {
-				super.init(frame: frameRect)
-				wantsLayer = true
-				// Make the view accept mouse events – we want it to become the first responder.
-				self.window?.makeFirstResponder(self)
-		  }
+		/// Remember the last location while dragging.
+		private var lastDragLocation: CGPoint?
 
-		  required init?(coder: NSCoder) { super.init(coder: coder) }
+		// MARK: - Initial setup
 
-		  // MARK: - Scrolling (trackpad / wheel)
-		  override func scrollWheel(with event: NSEvent) {
-				// Update offset with the wheel delta.
-				offsetBinding.wrappedValue += event.scrollingDeltaX
-				onScrollChange?(offsetBinding.wrappedValue)
+		override init(frame frameRect: NSRect) {
+			super.init(frame: frameRect)
+			wantsLayer = true
+			// Make the view accept mouse events – we want it to become the first responder.
+			window?.makeFirstResponder(self)
+		}
 
-				// Detect end of momentum‑based scrolling.
-				if event.phase == .ended || event.momentumPhase == .ended {
-					 onScrollEnd?()
-				}
-		  }
+		required init?(coder: NSCoder) {
+			super.init(coder: coder)
+		}
 
-		  // MARK: - Dragging
-		  override func mouseDown(with event: NSEvent) {
-				// Only start dragging on the left mouse button.
-				guard event.type == .leftMouseDown else { return }
-				lastDragLocation = event.locationInWindow
-		  }
+		// MARK: - Scrolling (trackpad / wheel)
 
-		  override func mouseDragged(with event: NSEvent) {
-				guard let last = lastDragLocation else { return }
+		override func scrollWheel(with event: NSEvent) {
+			// Update offset with the wheel delta.
+			offsetBinding.wrappedValue += event.scrollingDeltaX
+			onScrollChange?(offsetBinding.wrappedValue)
 
-				// Δx = current x – previous x
-				let deltaX = event.locationInWindow.x - last.x
-
-				// Update the offset (the binding lives on the view itself).
-				offsetBinding.wrappedValue += deltaX
-				onScrollChange?(offsetBinding.wrappedValue)
-
-				// Remember the new location for the next drag step.
-				lastDragLocation = event.locationInWindow
-		  }
-
-		  override func mouseUp(with event: NSEvent) {
-				lastDragLocation = nil
+			// Detect end of momentum‑based scrolling.
+			if event.phase == .ended || event.momentumPhase == .ended {
 				onScrollEnd?()
-		  }
-	 }
+			}
+		}
+
+		// MARK: - Dragging
+
+		override func mouseDown(with event: NSEvent) {
+			// Only start dragging on the left mouse button.
+			guard event.type == .leftMouseDown else { return }
+			lastDragLocation = event.locationInWindow
+		}
+
+		override func mouseDragged(with event: NSEvent) {
+			guard let last = lastDragLocation else { return }
+
+			// Δx = current x – previous x
+			let deltaX = event.locationInWindow.x - last.x
+
+			// Update the offset (the binding lives on the view itself).
+			offsetBinding.wrappedValue += deltaX
+			onScrollChange?(offsetBinding.wrappedValue)
+
+			// Remember the new location for the next drag step.
+			lastDragLocation = event.locationInWindow
+		}
+
+		override func mouseUp(with _: NSEvent) {
+			lastDragLocation = nil
+			onScrollEnd?()
+		}
+	}
 }

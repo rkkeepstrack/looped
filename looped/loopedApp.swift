@@ -9,17 +9,25 @@ import SwiftUI
 
 @main
 struct loopedApp: App {
-	@StateObject private var audioEngineController = AudioEngineController()
-	@StateObject private var offsetCalculator = OffsetCalculator()
+	/// Composition root: build the services and inject them into the view-models.
+	@StateObject private var player = PlayerViewModel(
+		playback: AVPlaybackService(),
+		files: DefaultAudioFileService(),
+		looping: DefaultLoopingService()
+	)
+	@StateObject private var waveform = WaveformViewModel()
 
 	var body: some Scene {
 		WindowGroup {
-			GeometryReader { g in
-				ContentView().environmentObject(audioEngineController).environmentObject(offsetCalculator)
-			}.frame(minWidth: 1024, maxWidth: .infinity, minHeight: 800, maxHeight: .infinity)
-				.padding(.horizontal, 20)
-				.cornerRadius(12)
-				.shadow(radius: 5)
+			GeometryReader { _ in
+				ContentView()
+					.environmentObject(player)
+					.environmentObject(waveform)
+			}
+			.frame(minWidth: 1024, maxWidth: .infinity, minHeight: 800, maxHeight: .infinity)
+			.padding(.horizontal, 20)
+			.cornerRadius(12)
+			.shadow(radius: 5)
 		}
 	}
 }

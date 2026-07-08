@@ -12,8 +12,8 @@ import DSWaveformImageViews
 import SwiftUI
 
 struct WaveformDisplayView: View {
-	@EnvironmentObject var audioPlayer: AudioEngineController
-	@EnvironmentObject var offsetCalculator: OffsetCalculator
+	@EnvironmentObject var audioPlayer: PlayerViewModel
+	@EnvironmentObject var offsetCalculator: WaveformViewModel
 
 	/// Bar thickness of the striped waveform; the stripe geometry is baked into
 	/// the WaveformShape path, so the stroke width must match the config.
@@ -28,7 +28,7 @@ struct WaveformDisplayView: View {
 
 	var body: some View {
 		ZStack {
-			if let url = audioPlayer.audioFile?.url {
+			if let url = audioPlayer.audioURL {
 				GeometryReader { geo in
 					let viewportWidth = geo.size.width
 					let height = geo.size.height
