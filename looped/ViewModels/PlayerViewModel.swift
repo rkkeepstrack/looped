@@ -24,6 +24,8 @@ final class PlayerViewModel: ObservableObject {
 	@Published var loopEnd: (TimeInterval?, AVAudioFramePosition?) = (nil, nil)
 	@Published var currentFileName: String?
 	@Published var audioURL: URL?
+	/// Non-nil when the last load failed (e.g. file too long); shown in the header.
+	@Published var loadError: String?
 
 	// MARK: Injected services
 
@@ -56,9 +58,13 @@ final class PlayerViewModel: ObservableObject {
 	func load(url: URL) async {
 		do {
 			let loaded = try await files.load(url: url)
-			await MainActor.run { self.apply(loaded) }
+			await MainActor.run {
+				self.loadError = nil
+				self.apply(loaded)
+			}
 		} catch {
-			print("Could not load file: \(error)")
+			let message = (error as? LocalizedError)?.errorDescription ?? "Could not load file."
+			await MainActor.run { self.loadError = message }
 		}
 	}
 
@@ -98,15 +104,16 @@ final class PlayerViewModel: ObservableObject {
 		stopTimer()
 	}
 
-	func jumpTo(time: TimeInterval) {
-		// While a loop is active, a scrub stays in the loop rather than tearing it
-		// down (proper in-loop scrubbing + snap-back is Plan 7).
-		guard !playback.isLooping else { return }
-		// Out-of-bounds scrub: keep playing as before (the animated snap-back is
-		// Plan 7). In-bounds: seek. `seek` also clamps defensively against crashes.
-		guard time >= 0, let duration, time <= duration else { return }
+	/// Seek to `time`; returns `true` if it actually seeked. Returns `false` (a no-op)
+	/// while a loop is armed (scrub stays in the loop) or when `time` is out of
+	/// bounds (playback continues as before) — the caller then eases the waveform back.
+	@discardableResult
+	func jumpTo(time: TimeInterval) -> Bool {
+		guard !playback.isLooping else { return false }
+		guard time >= 0, let duration, time <= duration else { return false }
 		playback.seek(to: time)
 		currentTime = time
+		return true
 	}
 
 	func updateRate() {

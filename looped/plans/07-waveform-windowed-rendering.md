@@ -1,5 +1,13 @@
 # Plan 7 — Waveform windowed ("live") rendering + length limit
 
+> **Status (2026-07-08): core done, build-verified.** Windowed rendering shipped:
+> whole song analyzed once, only a bucket-aligned viewport chunk is drawn via two
+> `WaveformLiveCanvas` layers and translated via `.offset` (smooth, peaks stable);
+> the analysis + window math live in a new pure `WaveformService`; 20-min limit +
+> error in `AudioFileService`; eased snap-back on scrub release (manual per-frame).
+> **Remaining:** bug #2 (dim-orange scrub highlight) and the **display-synced pan**
+> (still ~33 Hz stepping — `TimelineView`), which also subsumes the snap-back timer.
+
 **Type:** Waveform rendering rework (supersedes the `maxContentWidth` cap; folds in
 Plan 5 #8 "display-synced pan"; keeps the SoundCloud look from Plan 1).
 **Depends on:** Plans 1 & 3 (done).

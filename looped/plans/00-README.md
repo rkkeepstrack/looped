@@ -12,9 +12,9 @@ acceptance criteria → open questions. **Each plan's top has a Status line — 
 | 2 | [Loop points](02-loop-points.md) | ✅ **Done** (committed) |
 | 4 | [Architecture](04-architecture.md) | ✅ **Done** (committed `c725ddf`) |
 | 3 | [UI redesign](03-ui-redesign.md) | ✅ **Done** (committed `a3ac513`) |
-| 6 | [Bug fixes](06-bug-fixes.md) | 🟡 Partial — #1/#3/#6 done; #5 resolved by redesign; **#2/#4 folded into Plan 7** |
-| 7 | [Waveform windowed rendering](07-waveform-windowed-rendering.md) | ⬜ Planned — **suggested next** (awaiting go); absorbs bug #2 (scrub highlight) & #4 (scroll-out-of-loop) |
-| 5 | [Player features](05-player-features.md) | ⬜ Not started (library, drag-drop, loop nudge, pitch/rate) |
+| 6 | [Bug fixes](06-bug-fixes.md) | 🟡 #1/#3/#4/#6 done, #5 moot; **#2 → Plan 7**; **new: #7 (pitch vs currentTime/loops), #8 (slider value label)** — deferred |
+| 7 | [Waveform windowed rendering](07-waveform-windowed-rendering.md) | 🟡 **Core done** (committed) — remaining: bug #2 scrub highlight + display-synced pan |
+| 5 | [Player features](05-player-features.md) | ⬜ Not started (library, drag-drop, loop nudge, pitch/rate + sync) |
 
 **Immediate pending action:** Plan 7 (windowed/"live" waveform rendering) is written
 and awaiting the user's go. It replaces the full-width-layer render (which hits the

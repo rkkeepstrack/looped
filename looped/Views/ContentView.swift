@@ -64,7 +64,11 @@ struct ContentView: View {
 				.font(.headline)
 				.foregroundStyle(audioPlayer.currentFileName == nil ? Theme.textSecondary : Theme.textPrimary)
 
-			if audioPlayer.audioURL != nil {
+			if let error = audioPlayer.loadError {
+				Text(error)
+					.font(.subheadline)
+					.foregroundStyle(Theme.accent)
+			} else if audioPlayer.audioURL != nil {
 				Text("\(TimeFormatter.mmss(audioPlayer.currentTime)) | \(TimeFormatter.mmss(audioPlayer.duration))")
 					.font(.subheadline.monospacedDigit())
 					.foregroundStyle(Theme.textSecondary)

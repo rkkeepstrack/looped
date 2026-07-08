@@ -15,7 +15,7 @@ struct loopedApp: App {
 		files: DefaultAudioFileService(),
 		looping: DefaultLoopingService()
 	)
-	@StateObject private var waveform = WaveformViewModel()
+	@StateObject private var waveform = WaveformViewModel(service: DefaultWaveformService())
 
 	var body: some Scene {
 		WindowGroup {
