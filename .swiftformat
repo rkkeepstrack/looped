@@ -1,3 +1,4 @@
+--exclude .build,.swiftpm
 --acronyms ID,URL,UUID
 --allman false
 --allow-partial-wrapping true

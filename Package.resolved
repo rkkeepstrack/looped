@@ -1,13 +1,13 @@
 {
-  "originHash" : "eb3e6467aa3b79663b371a20cbe7f1b7c7a6a3c9f98e6945bc9704361b5ae42d",
+  "originHash" : "d3de7dd3b5dc29ab9f31336de1c85fc93c19b1ae7d134b71df413aa685ab2ac1",
   "pins" : [
     {
       "identity" : "dswaveformimage",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/dmrschmidt/DSWaveformImage",
       "state" : {
-        "revision" : "4c56578ee10128ee2b2c04c9c5aa73812de722db",
-        "version" : "14.2.2"
+        "revision" : "00afb7930863b9cc3bd011389d601735e548093c",
+        "version" : "14.5.0"
       }
     }
   ],

@@ -12,32 +12,41 @@ the pitch at the hard cut, especially off 1× speed; `PlaybackService` schedules
 is armed, scrubbing stays in the loop rather than tearing it down; seeks are clamped to the file
 bounds (scrubbing out of range can't crash the player).
 
-- Platform: macOS only (deployment target **macOS 15.6**), universal (Intel + Apple Silicon).
+- Platform: macOS only (deployment target **macOS 15**, `Package.swift`).
 - Frameworks: SwiftUI (UI), AppKit (scroll/keyboard capture), AVFoundation (audio), Combine.
-- Single SPM dependency: **DSWaveformImage** v14.2.2 (`https://github.com/dmrschmidt/DSWaveformImage`).
-- Tooling: **Xcode 26+** required (`LastUpgradeCheck = 2600`). Bundle id `RK.looped`.
+- Single dependency: **DSWaveformImage** v14.2.2 (`https://github.com/dmrschmidt/DSWaveformImage`).
+- Build system: **Swift Package Manager** (no `.xcodeproj`). Language mode **5** (`swiftLanguageModes:
+  [.v5]`) — the sources predate Swift 6 strict concurrency. Bundle id `RK.looped`.
+- Tooling: `just` (command interface), `swift`/SwiftPM, `swiftformat`. Building still needs the full
+  **Xcode toolchain** (not just Command Line Tools); the `justfile` exports `DEVELOPER_DIR`. Edit in
+  any editor (Zed etc.) — Xcode is not required.
 
-## Directory layout (note the nesting)
+## Directory layout
 
-- **Repo / git root** (this file, `.claude/`, `looped.xcodeproj`): `looped/looped/`
-- **Source dir**: `looped/looped/looped/`
+Standard SwiftPM layout, everything under the repo/git root (this file, `Package.swift`, `.claude/`):
+
+- **`Sources/looped/`** — app sources (module `looped`): `loopedApp.swift` + `Models/`, `Services/`,
+  `ViewModels/`, `Views/`, `Utils/` (+ `Assets.xcassets`, excluded from the build).
+- **`Tests/loopedTests/`** — unit tests (module `loopedTests`): `Services/`, `ViewModels/`,
+  `Support/`, `Views/`.
+- **`plans/`** — roadmap/plan docs (`00-README.md` first). **`scripts/`** — `make-app.sh` (bundler).
 
 ## Build & Run
 
-Run from the repo root (the folder containing `looped.xcodeproj`):
+Everything runs through **`just`** (see `justfile`); run `just` alone to list recipes.
 
 ```bash
-xcodebuild -project looped.xcodeproj -scheme looped -configuration Debug build   # build
-xcodebuild -project looped.xcodeproj -scheme looped clean                        # clean
-xcodebuild -list                                                                 # list schemes/targets
-xcodebuild test -project looped.xcodeproj -scheme looped -destination 'platform=macOS'   # run unit tests
+just build          # swift build (debug)
+just run            # build a .app bundle (scripts/make-app.sh) and open it — proper GUI app
+just test           # swift test — headless unit tests, no Xcode (pass args: just test --filter Looping)
+just format         # swiftformat .   (just format-check to lint only)
+just clean          # swift package clean + remove .build/Looped.app
 ```
 
-If `xcodebuild` errors with "requires Xcode" (Command Line Tools are selected),
-prefix it with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`.
-
-Project, scheme, and target are all named `looped`. For normal development, build & run from
-Xcode (⌘R) — it's a windowed macOS app (min size 1024×800, set in `loopedApp.swift`).
+`swift build`/`swift test` also work directly. `just run` assembles `.build/Looped.app` (an
+`Info.plist` + the SwiftPM binary) and `open`s it so it launches as a real foreground app
+(Dock/menu/focus) rather than a bare executable — it's a windowed app (min 1024×800, set in
+`loopedApp.swift`).
 
 ## Architecture (SwiftUI + MVVM, DI'd services)
 
@@ -90,39 +99,47 @@ be mocked.
 
 | File | Role |
 |---|---|
-| `looped/loopedApp.swift` | `@main` App; composition root (build services → inject view-models); window sizing, dark scheme, `Theme.background`. |
-| `looped/Models/LoadedAudio.swift` | Value type: decoded file + buffer + format + duration. |
-| `looped/Services/PlaybackService.swift` | `PlaybackService` protocol + `AVPlaybackService`: audio graph, transport, loop scheduling, playback clock. |
-| `looped/Services/AudioFileService.swift` | `AudioFileService` protocol + default: `async` URL → `LoadedAudio` decode; rejects tracks > 20 min. |
-| `looped/Services/LoopingService.swift` | `LoopingService` protocol + default: pure loop-buffer slicing + seam crossfade. |
-| `looped/Services/WaveformService.swift` | `WaveformService` protocol + default: pure whole-song analysis + bucket-aligned window math (`WaveformLayout`/`WaveformWindow`). |
-| `looped/ViewModels/PlayerViewModel.swift` | Playback state/intents/timer; drives the services (see Architecture). |
-| `looped/ViewModels/WaveformViewModel.swift` | Waveform observable state + scrubbing/snap-back (was `OffsetCalculator`); delegates windowing/analysis to `WaveformService`. |
-| `looped/Views/ContentView.swift` | Root layout: animated collapsible **`Sidebar`** (private; import button now, track list in Plan 5) + a top-left toggle (`@AppStorage "sidebarOpen"`) + centered header (name + `currentTime | fileTime`) + waveform + bottom bar; hosts `KeyboardHandler`. |
-| `looped/Views/ControlsView.swift` | The bottom bar: Volume + Pitch (=rate, log ~0.5×–2×) `CompactSlider`s bottom-left, play/pause + stop center, `LoopPanel` (A/B + Reset, disabled `«`/`»` nudge arrows reserved for Plan 5) bottom-right. `CompactSlider`/`LoopPanel` are private. |
-| `looped/Views/WaveformView.swift` | **`WaveformDisplayView`** — windowed render: two viewport-sized `WaveformLiveCanvas` layers (gray upcoming + orange played, masked to the playhead) fed the visible sample slice from `WaveformViewModel`, plus A/B markers + shaded loop region (`.position`) and the center iterator; drives scroll via `ScrollObserverView`. |
-| `looped/Views/Theme.swift` | Shared design tokens (`enum Theme`): warm-orange-on-black palette, waveform colors, and layout metrics (sidebar width, panel corner/border). |
-| `looped/Views/ScrollObserverView.swift` | `NSViewRepresentable` capturing scroll-wheel + mouse-drag → `WaveformViewModel`. |
-| `looped/Utils/KeyboardHandler.swift` | `NSViewRepresentable` global key monitor; spacebar → play/pause. |
-| `looped/Utils/TimeFormatter.swift` | `enum TimeFormatter`: formats playback times as `m:ss`. |
+| `Sources/looped/loopedApp.swift` | `@main` App; composition root (build services → inject view-models); window sizing, dark scheme, `Theme.background`. |
+| `Sources/looped/Models/LoadedAudio.swift` | Value type: decoded file + buffer + format + duration. |
+| `Sources/looped/Services/PlaybackService.swift` | `PlaybackService` protocol + `AVPlaybackService`: audio graph, transport, loop scheduling, playback clock. |
+| `Sources/looped/Services/AudioFileService.swift` | `AudioFileService` protocol + default: `async` URL → `LoadedAudio` decode; rejects tracks > 20 min. |
+| `Sources/looped/Services/LoopingService.swift` | `LoopingService` protocol + default: pure loop-buffer slicing + seam crossfade. |
+| `Sources/looped/Services/WaveformService.swift` | `WaveformService` protocol + default: pure whole-song analysis + bucket-aligned window math (`WaveformLayout`/`WaveformWindow`). |
+| `Sources/looped/ViewModels/PlayerViewModel.swift` | Playback state/intents/timer; drives the services (see Architecture). |
+| `Sources/looped/ViewModels/WaveformViewModel.swift` | Waveform observable state + scrubbing/snap-back (was `OffsetCalculator`); delegates windowing/analysis to `WaveformService`. |
+| `Sources/looped/Views/ContentView.swift` | Root layout: animated collapsible **`Sidebar`** (private; import button now, track list in Plan 5) + a top-left toggle (`@AppStorage "sidebarOpen"`) + centered header (name + `currentTime | fileTime`) + waveform + bottom bar; hosts `KeyboardHandler`. |
+| `Sources/looped/Views/ControlsView.swift` | The bottom bar: Volume + Pitch (=rate, log ~0.5×–2×) `CompactSlider`s bottom-left, play/pause + stop center, `LoopPanel` (A/B + Reset, disabled `«`/`»` nudge arrows reserved for Plan 5) bottom-right. `CompactSlider`/`LoopPanel` are private. |
+| `Sources/looped/Views/WaveformView.swift` | **`WaveformDisplayView`** — windowed render: two viewport-sized `WaveformLiveCanvas` layers (gray upcoming + orange played, masked to the playhead) fed the visible sample slice from `WaveformViewModel`, plus A/B markers + shaded loop region (`.position`) and the center iterator; drives scroll via `ScrollObserverView`. |
+| `Sources/looped/Views/Theme.swift` | Shared design tokens (`enum Theme`): warm-orange-on-black palette, waveform colors, and layout metrics (sidebar width, panel corner/border). |
+| `Sources/looped/Views/ScrollObserverView.swift` | `NSViewRepresentable` capturing scroll-wheel + mouse-drag → `WaveformViewModel`. |
+| `Sources/looped/Utils/KeyboardHandler.swift` | `NSViewRepresentable` global key monitor; spacebar → play/pause. |
+| `Sources/looped/Utils/TimeFormatter.swift` | `enum TimeFormatter`: formats playback times as `m:ss`. |
+
+**Build/tooling files:** `Package.swift` (SwiftPM manifest: exe target `looped` + test target
+`loopedTests`, DSWaveformImage dep, `swiftLanguageModes: [.v5]`), `justfile` (command interface),
+`scripts/make-app.sh` (assembles the `.app` bundle for `just run`), `.swiftformat` (repo-root config).
 
 ## Tests
 
-A **`loopedTests`** unit-test target (host = the app; `@testable import looped`)
-covers the pure services. Its sources live in `tests/` as a
-`PBXFileSystemSynchronizedRootGroup` attached to the test target — **new files in
-`tests/` are picked up automatically** (no pbxproj edit), the same as `looped/`.
-Run with `xcodebuild test …` (see Build & Run) or ⌘U in Xcode.
+The **`loopedTests`** SwiftPM test target (`@testable import looped`) runs **headless** via
+`just test` / `swift test` — no Xcode, no app host, no audio device (~0.04s). Two layers:
 
-- `tests/Services/WaveformServiceTests.swift` — `WaveformService` window math (bucket
-  alignment, offset/playhead, silence padding, `chunkX`).
-- `tests/Services/LoopingServiceTests.swift` — `LoopingService` slice + crossfade seam.
-- `tests/Services/AudioFileServiceTests.swift` — the 20-min limit (pure
+_Pure services_ (dependency-free logic):
+- `Tests/loopedTests/Services/WaveformServiceTests.swift` — window math (bucket alignment,
+  offset/playhead, silence padding, `chunkX`).
+- `Tests/loopedTests/Services/LoopingServiceTests.swift` — loop slice + crossfade seam.
+- `Tests/loopedTests/Services/AudioFileServiceTests.swift` — the 20-min limit (pure
   `DefaultAudioFileService.exceedsDurationLimit`), error strings, a decode happy-path.
-- `tests/Views/ContentViewTests.swift` — placeholder (empty).
 
-The audio engine and view-models aren't unit-tested; see **`TESTING.md`** (repo root)
-for the manual QA checklist that covers them plus looping/waveform behavior.
+_View-models_ (behavior, via injected test doubles — automates most of the TESTING.md checklist):
+- `Tests/loopedTests/ViewModels/PlayerViewModelTests.swift` — transport/looping/loading/seek intents
+  against a `FakePlaybackService` spy + a real decoded fixture.
+- `Tests/loopedTests/ViewModels/WaveformViewModelTests.swift` — scrubbing state + window delegation.
+- `Tests/loopedTests/Support/TestDoubles.swift` — `FakePlaybackService`, `TooLongAudioFileService`,
+  `AudioFixture` (writes a temp WAV). `Views/ContentViewTests.swift` — placeholder (empty).
+
+The **audio engine** (`AVPlaybackService`) and the actual look/sound (loop seamlessness, waveform
+smoothness) need a device/eyes/ears — see **`TESTING.md`** (repo root) for the manual QA checklist.
 
 ## Conventions
 
@@ -133,13 +150,14 @@ for the manual QA checklist that covers them plus looping/waveform behavior.
   presentation state out of the services.
 - **Dependency injection**: constructor injection wired at the composition root (`loopedApp`); no
   DI framework. New services get a `protocol` + a `Default…`/`AV…` implementation.
-- State via `@Published` / `@EnvironmentObject` / `@StateObject` (Combine is `internal import`ed
-  but mostly used indirectly through `ObservableObject`).
+- State via `@Published` / `@EnvironmentObject` / `@StateObject` (Combine used mostly indirectly
+  through `ObservableObject`).
 - `async/await` for file I/O (`openFile`, `AudioFileService.load`).
 - `// MARK:` section markers throughout.
-- **SwiftFormat** config at `looped/.swiftformat` — **tabs** for indentation, trailing commas
-  always. Run SwiftFormat before committing if available.
-- **Theming**: use color tokens from `enum Theme` (`looped/Views/Theme.swift`) rather than
+- **SwiftFormat** config at repo-root `.swiftformat` — **tabs** for indentation, trailing commas
+  always. Run `just format` before committing. (Note: `--redundant-async tests-only` strips `async`
+  from `await`-less test methods — fine under SwiftPM, where sync `@MainActor` tests run cleanly.)
+- **Theming**: use color tokens from `enum Theme` (`Sources/looped/Views/Theme.swift`) rather than
   hardcoded `Color`/`NSColor` literals in views.
 
 ## Maintenance — keep this file current

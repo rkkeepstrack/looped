@@ -10,7 +10,7 @@
 
 import AppKit
 import AVFoundation
-internal import Combine
+import Combine
 import UniformTypeIdentifiers
 
 final class PlayerViewModel: ObservableObject {

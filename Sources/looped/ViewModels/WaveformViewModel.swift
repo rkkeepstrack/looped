@@ -8,7 +8,7 @@
 //  animation, and delegates the per-frame window computation to the service.
 //
 
-internal import Combine
+import Combine
 import SwiftUI
 
 final class WaveformViewModel: ObservableObject {
