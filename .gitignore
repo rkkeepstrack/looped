@@ -21,3 +21,6 @@ DerivedData/
 
 # Misc
 *.swp
+
+# No Xcode project — this is a Swift package (see Package.swift)
+*.xcodeproj/
