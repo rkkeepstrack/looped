@@ -12,3 +12,4 @@
    → Yes — **SwiftFormat** (config at `looped/.swiftformat`; Apple also ships `swift-format`). It was missing a `--swiftversion`, which silently disables rules and prints a warning; added `--swiftversion 5.0` so formatting is now consistent/deterministic.
 7. pitch doesnt work with currentTime and the way the waveform scrolls through. this is definitely an issue as the loop points don't work as they should then
 8. UI: Pitch and Volume need to have an Indicator when sliding. That means, when i slide to a different value, i want the headline of the slider (e.g. "Pitch" or "Volume") to be the current Value of the slider, trimmed to a human understandable and helpful value.
+9. scrolling does not work as intended. when scrolling through the audio, the pointer scrolls with the audio, but i want it to stay at the same current timing to make the user feel like he's holding the playhead and let the "playing audio scroll out of view"
