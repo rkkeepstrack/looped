@@ -83,31 +83,77 @@ struct ContentView: View {
 
 // MARK: - Sidebar
 
-/// Collapsible left panel. For now it holds the import button; the track list
-/// lands here in Plan 5.
+/// Collapsible left panel: the import button + the track library list.
 private struct Sidebar: View {
-	@EnvironmentObject var audioPlayer: PlayerViewModel
+	@EnvironmentObject var library: LibraryViewModel
 
 	var body: some View {
 		VStack(alignment: .leading, spacing: 14) {
 			Button {
-				Task { await audioPlayer.openFile() }
+				Task { await library.openFiles() }
 			} label: {
-				Label("Import File", systemImage: "square.and.arrow.down")
+				Label("Import Files", systemImage: "square.and.arrow.down")
 					.frame(maxWidth: .infinity)
 			}
 			.buttonStyle(.bordered)
 			.controlSize(.large)
 
-			Text("Your tracks will appear here")
-				.font(.caption)
-				.foregroundStyle(Theme.textSecondary)
+			if library.tracks.isEmpty {
+				Text("Your tracks will appear here")
+					.font(.caption)
+					.foregroundStyle(Theme.textSecondary)
+			} else {
+				ScrollView {
+					LazyVStack(alignment: .leading, spacing: 2) {
+						ForEach(library.tracks) { track in
+							TrackRow(track: track, isCurrent: track.id == library.currentTrackID)
+								.onTapGesture {
+									Task { await library.play(track) }
+								}
+						}
+					}
+				}
+			}
 
-			Spacer()
+			Spacer(minLength: 0)
 		}
 		.padding(.horizontal, 12)
 		.padding(.top, 48) // clear the top-left toggle
 		.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 		.background(Theme.surface)
+	}
+}
+
+/// One library row: title + duration; the current track reads in accent orange.
+private struct TrackRow: View {
+	let track: Track
+	let isCurrent: Bool
+	@State private var hovering = false
+
+	var body: some View {
+		HStack(spacing: 8) {
+			Text(track.title)
+				.font(.callout)
+				.lineLimit(1)
+				.truncationMode(.tail)
+				.foregroundStyle(isCurrent ? Theme.accent : Theme.textPrimary)
+
+			Spacer(minLength: 4)
+
+			if let duration = track.duration {
+				Text(TimeFormatter.mmss(duration))
+					.font(.caption.monospacedDigit())
+					.foregroundStyle(isCurrent ? Theme.accentDim : Theme.textSecondary)
+			}
+		}
+		.padding(.horizontal, 8)
+		.padding(.vertical, 5)
+		.frame(maxWidth: .infinity, alignment: .leading)
+		.background(
+			RoundedRectangle(cornerRadius: 6)
+				.fill(hovering ? Color.white.opacity(0.06) : Color.clear)
+		)
+		.contentShape(Rectangle())
+		.onHover { hovering = $0 }
 	}
 }

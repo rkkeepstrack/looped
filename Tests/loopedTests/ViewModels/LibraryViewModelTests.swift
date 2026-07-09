@@ -1,0 +1,87 @@
+//
+//  LibraryViewModelTests.swift
+//  loopedTests
+//
+//  Library behavior: add/dedupe/filter over real temp WAV fixtures, and the
+//  play bridge (sets currentTrackID, drives the player) via FakePlaybackService.
+//
+
+import Foundation
+@testable import looped
+import Testing
+
+@MainActor
+struct LibraryViewModelTests {
+	private func makeSUT(files: AudioFileService = DefaultAudioFileService())
+		-> (library: LibraryViewModel, player: PlayerViewModel, playback: FakePlaybackService)
+	{
+		let playback = FakePlaybackService()
+		let player = PlayerViewModel(playback: playback, files: files, looping: DefaultLoopingService())
+		return (LibraryViewModel(player: player), player, playback)
+	}
+
+	// MARK: - add
+
+	@Test func addAppendsTracksWithTitleAndDuration() async throws {
+		let (library, _, _) = makeSUT()
+		let url = try AudioFixture.tempSine(seconds: 2)
+
+		await library.add(urls: [url])
+
+		#expect(library.tracks.count == 1)
+		let track = try #require(library.tracks.first)
+		#expect(track.title == url.deletingPathExtension().lastPathComponent)
+		let duration = try #require(track.duration)
+		#expect(abs(duration - 2) < 0.1)
+	}
+
+	@Test func addDedupesByStandardizedURL() async throws {
+		let (library, _, _) = makeSUT()
+		let url = try AudioFixture.tempSine(seconds: 1)
+
+		await library.add(urls: [url, url])
+		await library.add(urls: [url])
+
+		#expect(library.tracks.count == 1)
+	}
+
+	@Test func addSkipsNonAudioFiles() async throws {
+		let (library, _, _) = makeSUT()
+		let text = FileManager.default.temporaryDirectory
+			.appendingPathComponent("looped-fixture-\(UUID().uuidString).txt")
+		try "not audio".write(to: text, atomically: true, encoding: .utf8)
+		let wav = try AudioFixture.tempSine(seconds: 1)
+
+		await library.add(urls: [text, wav])
+
+		#expect(library.tracks.map(\.url) == [wav])
+	}
+
+	// MARK: - play
+
+	@Test func playLoadsTrackSetsCurrentAndStartsPlayback() async throws {
+		let (library, player, playback) = makeSUT()
+		let url = try AudioFixture.tempSine(seconds: 1)
+		await library.add(urls: [url])
+		let track = try #require(library.tracks.first)
+
+		await library.play(track)
+
+		#expect(library.currentTrackID == track.id)
+		#expect(player.audioURL == url)
+		#expect(player.isPlaying)
+		#expect(playback.setSourceCount == 1)
+		#expect(playback.playCount == 1)
+	}
+
+	@Test func playFailedLoadKeepsCurrentTrackUnset() async throws {
+		let (library, player, playback) = makeSUT(files: TooLongAudioFileService())
+		let track = try Track(id: UUID(), url: AudioFixture.tempSine(seconds: 1), title: "t", duration: 1)
+
+		await library.play(track)
+
+		#expect(library.currentTrackID == nil)
+		#expect(player.loadError != nil)
+		#expect(playback.playCount == 0)
+	}
+}
