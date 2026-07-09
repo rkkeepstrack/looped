@@ -67,11 +67,14 @@ final class LibraryViewModel: ObservableObject {
 			added.append(await makeTrack(url: url))
 		}
 		guard !added.isEmpty else { return }
+		// Capture an immutable copy: referencing the mutated var from the
+		// concurrently-executing closure is an error in Swift 6 mode.
+		let newTracks = added
 		await MainActor.run {
 			if let index {
-				tracks.insert(contentsOf: added, at: min(max(index, 0), tracks.count))
+				tracks.insert(contentsOf: newTracks, at: min(max(index, 0), tracks.count))
 			} else {
-				tracks.append(contentsOf: added)
+				tracks.append(contentsOf: newTracks)
 			}
 		}
 	}

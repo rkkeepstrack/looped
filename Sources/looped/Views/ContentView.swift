@@ -191,11 +191,15 @@ private struct Sidebar: View {
 			ForEach(library.tracks) { track in
 				TrackRow(
 					track: track,
-					isCurrent: track.id == library.currentTrackID
+					isCurrent: track.id == library.currentTrackID,
+					isSelected: track.id == selectedTrackID
 				)
 				.tag(track.id)
 				.listRowSeparator(.hidden)
-				.listRowInsets(EdgeInsets(top: 1, leading: 0, bottom: 1, trailing: 0))
+				// Zero insets: the row's opaque background must cover the whole
+				// cell so the List's native (system-blue) selection highlight
+				// never shows through — the theme draws its own.
+				.listRowInsets(EdgeInsets())
 			}
 			.onMove { source, destination in
 				library.move(fromOffsets: source, toOffset: destination)
@@ -249,12 +253,14 @@ private struct Sidebar: View {
 	}
 }
 
-/// One library row: title + duration; the current track reads in accent orange.
-/// Selection highlighting is the List's native rendering (system accent), not
-/// custom — required so native selection + row dragging keep working.
+/// One library row: title + duration; the current track reads in accent orange,
+/// the (single-click) selected row gets a lighter background. The background's
+/// bottom layer is opaque `Theme.surface`, hiding the List's native system-blue
+/// selection highlight so the themed fill is the only selection visual.
 private struct TrackRow: View {
 	let track: Track
 	let isCurrent: Bool
+	let isSelected: Bool
 	@State private var hovering = false
 
 	var body: some View {
@@ -277,8 +283,12 @@ private struct TrackRow: View {
 		.padding(.vertical, 5)
 		.frame(maxWidth: .infinity, alignment: .leading)
 		.background(
-			RoundedRectangle(cornerRadius: 6)
-				.fill(hovering ? Color.white.opacity(0.06) : Color.clear)
+			ZStack {
+				Rectangle().fill(Theme.surface) // opaque: masks the native highlight
+				RoundedRectangle(cornerRadius: 6)
+					.fill(isSelected ? Color.white.opacity(0.12) : hovering ? Color.white.opacity(0.06) : Color.clear)
+					.padding(.vertical, 1)
+			}
 		)
 		.contentShape(Rectangle())
 		.onHover { hovering = $0 }
