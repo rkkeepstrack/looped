@@ -34,6 +34,9 @@ enum Theme {
 	/// Scrub highlight — subtle light blue (the cool counterpart to the warm
 	/// played-orange), drawn between the played edge and the scrub cursor.
 	static let waveformScrub = Color(red: 0.45, green: 0.68, blue: 0.90).opacity(0.75)
+	/// Translucent light-gray wash over the waveform while a file drag hovers
+	/// the waveform drop zone (drop → load immediately).
+	static let waveformDropHighlight = Color(white: 0.85).opacity(0.18)
 
 	// MARK: Metrics
 

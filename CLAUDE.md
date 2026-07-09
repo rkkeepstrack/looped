@@ -74,12 +74,15 @@ be mocked.
 - **`LibraryViewModel`** (`ViewModels/LibraryViewModel.swift`) — the track library. Holds
   `@Published` `tracks: [Track]` / `currentTrackID`, owns the multi-select import panel
   (`openFiles()`; import is library UI, not playback; auto-plays the first track when the library
-  was empty), the drag & drop intake (`addDropped(urls:)` — expands dropped folders via
-  `expandingFolders(in:)`, a recursive off-main `FileManager` walk filtered by `Track.isSupported`;
-  `urls(from:)` resolves `.fileURL` `NSItemProvider`s; mirrors `openFiles`' load-first-when-empty),
-  and `add(urls:)` — the single intake path (dedupe by `standardizedFileURL`, filter via
-  `Track.isSupported` (wav/mp3/aiff — the one predicate shared with the open panel and drop
-  expansion), title/duration via `AVURLAsset` metadata — no full decode per add).
+  was empty), the drag & drop intakes (`addDropped(urls:at:)` for the library zone — expands
+  dropped folders via `expandingFolders(in:)`, a recursive off-main `FileManager` walk filtered by
+  `Track.isSupported`, inserts at the List drop index, mirrors `openFiles`' load-first-when-empty;
+  `loadDropped(urls:)` for the waveform zone — adds the first supported file (deduped) and loads it
+  immediately; `urls(from:)` resolves `.fileURL` `NSItemProvider`s), `move(fromOffsets:toOffset:)`
+  (row reorder), and `add(urls:at:)` — the single intake path (dedupe by `standardizedFileURL`,
+  filter via `Track.isSupported` (wav/mp3/aiff — the one predicate shared with the open panel and
+  drop expansion), title/duration via `AVURLAsset` metadata — no full decode per add; optional
+  clamped insertion index).
   `load(_ track:)` bridges to the constructor-injected `PlayerViewModel.load(url:)` (no autoplay —
   the transport starts playback; the 20-min limit / `loadError` applies per load) and sets
   `currentTrackID` only on a successful
@@ -143,7 +146,7 @@ the shared audio-type predicate.
 | `Sources/looped/ViewModels/PlayerViewModel.swift` | Playback state/intents/timer; drives the services (see Architecture). |
 | `Sources/looped/ViewModels/LibraryViewModel.swift` | Track library: multi-select import panel, `add(urls:)` intake (dedupe/filter/metadata), row-tap → play via `PlayerViewModel`. |
 | `Sources/looped/ViewModels/WaveformViewModel.swift` | Waveform observable state + scrubbing/snap-back (was `OffsetCalculator`); delegates windowing/analysis to `WaveformService`. |
-| `Sources/looped/Views/ContentView.swift` | Root layout: animated collapsible **`Sidebar`** (private; import button + track list — `TrackRow`s with title/duration, current row in `Theme.accent`, single click selects instantly (visual only), double-click → `LibraryViewModel.load` (no autoplay); width user-resizable by dragging the divider, clamped to `Theme.sidebarMinWidth…MaxWidth`, persisted via `@AppStorage "sidebarWidth"`; empty state doubles as the drop hint) + a whole-window `.onDrop` of `.fileURL` (accent border while targeted; providers → `LibraryViewModel.urls(from:)` → `addDropped`) + a top-left toggle (`@AppStorage "sidebarOpen"`) + centered header (name + `currentTime | fileTime`) + waveform + bottom bar; hosts `KeyboardHandler`. |
+| `Sources/looped/Views/ContentView.swift` | Root layout: animated collapsible **`Sidebar`** (private; import button + track list — `TrackRow`s with title/duration, current row in `Theme.accent`, single click selects instantly (visual only), double-click → `LibraryViewModel.load` (no autoplay); width user-resizable by dragging the divider, clamped to `Theme.sidebarMinWidth…MaxWidth`, persisted via `@AppStorage "sidebarWidth"`; the track list is a themed plain `List` so `.onMove` (drag-reorder) and `.onInsert` of `.fileURL` (external drop → `addDropped(urls:at:)`) draw the native insertion line at the drop point; the empty state is a bordered drop zone) + a top-left toggle (`@AppStorage "sidebarOpen"`) + centered header (name + `currentTime | fileTime`) + waveform + bottom bar; hosts `KeyboardHandler`. Two drop zones: the sidebar list (insertion line) and the waveform (`Theme.waveformDropHighlight` wash while targeted; drop → `loadDropped`, loads immediately). |
 | `Sources/looped/Views/ControlsView.swift` | The bottom bar: Volume + Rate (log ~0.5×–2×, labeled "Speed" when synced) + Pitch (±12 semitones) `CompactSlider`s and a "Sync pitch & rate" checkbox (varispeed mode: one slider = tempo+pitch together, pitch slider disabled showing the implied shift) bottom-left, play/pause + stop center, `LoopPanel` (A/B + Reset, `«`/`»` arrows nudge a set point ±0.05 s, disabled while unset; nudging re-arms via `PlayerViewModel.nudgeLoopStart/End(by:)`, clamped to the file bounds and a `minLoopGap` of 0.05 s) bottom-right; sliders show the formatted current value in place of their label while dragging; clicking a slider's label (shows "Reset" on hover) resets it to its default (100 % / 1.0× / 0 st). `CompactSlider`/`LoopPanel` are private. |
 | `Sources/looped/Views/WaveformView.swift` | **`WaveformDisplayView`** — windowed render: two viewport-sized `SyncWaveformCanvas` layers (gray upcoming + orange played, masked to the playhead) fed the visible sample slice from `WaveformViewModel`, plus a light-blue scrub-highlight layer (`Theme.waveformScrub`, masked between the played edge and the scrub cursor while scrubbing), A/B markers + shaded loop region (`.position`) and the center iterator; drives scroll via `ScrollObserverView`; while playing, a `TimelineView(.animation)` re-evaluates the window per display frame (the 0.03s timer only feeds labels) via `PlayerViewModel.livePlaybackTime()`, so the pan tracks the display clock. `SyncWaveformCanvas` (private) is a `WaveformLiveCanvas` clone that draws **synchronously** (`Canvas(rendersAsynchronously: false)`, same `WaveformImageDrawer` call) so the per-tick reslice and its compensating `.offset` commit in one pass — the library's async canvas lagged a frame and made the seam flicker. |
 | `Sources/looped/Views/Theme.swift` | Shared design tokens (`enum Theme`): warm-orange-on-black palette, waveform colors, and layout metrics (sidebar width, panel corner/border). |

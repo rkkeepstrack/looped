@@ -109,6 +109,70 @@ struct LibraryViewModelTests {
 		#expect(library.currentTrackID == library.tracks.first?.id)
 	}
 
+	// MARK: - insert / move / waveform drop
+
+	@Test func addAtIndexInsertsBetweenExistingRows() async throws {
+		let (library, _, _) = makeSUT()
+		let first = try AudioFixture.tempSine(seconds: 1)
+		let second = try AudioFixture.tempSine(seconds: 1)
+		await library.add(urls: [first, second])
+		let inserted = try AudioFixture.tempSine(seconds: 1)
+
+		await library.add(urls: [inserted], at: 1)
+
+		#expect(library.tracks.map(\.url) == [first, inserted, second])
+	}
+
+	@Test func addClampsAnOutOfRangeInsertionIndex() async throws {
+		let (library, _, _) = makeSUT()
+		let existing = try AudioFixture.tempSine(seconds: 1)
+		await library.add(urls: [existing])
+		let appended = try AudioFixture.tempSine(seconds: 1)
+
+		await library.add(urls: [appended], at: 99)
+
+		#expect(library.tracks.map(\.url) == [existing, appended])
+	}
+
+	@Test func moveReordersTracks() async throws {
+		let (library, _, _) = makeSUT()
+		let a = try AudioFixture.tempSine(seconds: 1)
+		let b = try AudioFixture.tempSine(seconds: 1)
+		let c = try AudioFixture.tempSine(seconds: 1)
+		await library.add(urls: [a, b, c])
+
+		library.move(fromOffsets: [0], toOffset: 3)
+
+		#expect(library.tracks.map(\.url) == [b, c, a])
+	}
+
+	@Test func loadDroppedAddsAndLoadsTheFirstSupportedFile() async throws {
+		let (library, player, playback) = makeSUT()
+		let text = FileManager.default.temporaryDirectory
+			.appendingPathComponent("looped-fixture-\(UUID().uuidString).txt")
+		try "not audio".write(to: text, atomically: true, encoding: .utf8)
+		let wav = try AudioFixture.tempSine(seconds: 1)
+
+		await library.loadDropped(urls: [text, wav])
+
+		#expect(library.tracks.map(\.url) == [wav])
+		#expect(library.currentTrackID == library.tracks.first?.id)
+		#expect(player.audioURL == wav)
+		#expect(playback.setSourceCount == 1)
+	}
+
+	@Test func loadDroppedReusesAnExistingLibraryEntry() async throws {
+		let (library, _, _) = makeSUT()
+		let wav = try AudioFixture.tempSine(seconds: 1)
+		await library.add(urls: [wav])
+		let existing = try #require(library.tracks.first)
+
+		await library.loadDropped(urls: [wav])
+
+		#expect(library.tracks.count == 1)
+		#expect(library.currentTrackID == existing.id)
+	}
+
 	// MARK: - load
 
 	@Test func loadSetsCurrentTrackWithoutStartingPlayback() async throws {

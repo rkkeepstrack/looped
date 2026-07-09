@@ -11,7 +11,8 @@ struct ContentView: View {
 	@EnvironmentObject var audioPlayer: PlayerViewModel
 	@EnvironmentObject var offsetCalculator: WaveformViewModel
 	@EnvironmentObject var library: LibraryViewModel
-	@State private var isDropTargeted = false
+	/// A file drag is hovering the waveform drop zone (drop → load immediately).
+	@State private var waveformDropTargeted = false
 	@AppStorage("sidebarOpen") private var sidebarOpen = true
 	@AppStorage("sidebarWidth") private var sidebarWidth = Double(Theme.sidebarWidth)
 	/// Width latched at drag start, so the resize tracks the cursor without drift.
@@ -47,23 +48,6 @@ struct ContentView: View {
 		}
 		// Keyboard shortcuts (spacebar → play/pause)
 		.background(KeyboardHandler(audioPlayer: audioPlayer))
-		// Whole-window drop target: audio files/folders → library intake.
-		.onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
-			guard !providers.isEmpty else { return false }
-			Task {
-				let urls = await LibraryViewModel.urls(from: providers)
-				await library.addDropped(urls: urls)
-			}
-			return true
-		}
-		.overlay {
-			if isDropTargeted {
-				RoundedRectangle(cornerRadius: Theme.panelCorner)
-					.strokeBorder(Theme.accent.opacity(0.6), lineWidth: 2)
-					.padding(4)
-					.allowsHitTesting(false)
-			}
-		}
 	}
 
 	// MARK: Sidebar resize
@@ -105,10 +89,32 @@ struct ContentView: View {
 		VStack(spacing: 0) {
 			header
 			Divider()
-			WaveformDisplayView()
+			waveformDropZone
 			Divider()
 			ControlsView()
 		}
+	}
+
+	/// The waveform as a drop zone: while a file drag hovers, the whole
+	/// waveform gets a translucent light-gray wash; dropping loads the file
+	/// immediately (the library zone — the sidebar list — only inserts).
+	private var waveformDropZone: some View {
+		WaveformDisplayView()
+			.overlay {
+				if waveformDropTargeted {
+					Rectangle()
+						.fill(Theme.waveformDropHighlight)
+						.allowsHitTesting(false)
+				}
+			}
+			.onDrop(of: [.fileURL], isTargeted: $waveformDropTargeted) { providers in
+				guard !providers.isEmpty else { return false }
+				Task {
+					let urls = await LibraryViewModel.urls(from: providers)
+					await library.loadDropped(urls: urls)
+				}
+				return true
+			}
 	}
 
 	// MARK: Header (name + currentTime | fileTime)
@@ -138,11 +144,15 @@ struct ContentView: View {
 
 // MARK: - Sidebar
 
-/// Collapsible left panel: the import button + the track library list.
+/// Collapsible left panel: the import button + the track library list. The
+/// list is the "library" drop zone: external file/folder drops and internal
+/// reorder drags both show the List's native insertion line at the drop point.
 private struct Sidebar: View {
 	@EnvironmentObject var library: LibraryViewModel
 	/// Row picked by a single click — purely visual until a double-click plays it.
 	@State private var selectedTrackID: UUID?
+	/// A file drag is hovering the empty-library drop zone.
+	@State private var emptyDropTargeted = false
 
 	var body: some View {
 		VStack(alignment: .leading, spacing: 14) {
@@ -156,29 +166,9 @@ private struct Sidebar: View {
 			.controlSize(.large)
 
 			if library.tracks.isEmpty {
-				Text("Drop audio files or folders here")
-					.font(.caption)
-					.foregroundStyle(Theme.textSecondary)
+				emptyDropZone
 			} else {
-				ScrollView {
-					LazyVStack(alignment: .leading, spacing: 2) {
-						ForEach(library.tracks) { track in
-							TrackRow(
-								track: track,
-								isCurrent: track.id == library.currentTrackID,
-								isSelected: track.id == selectedTrackID
-							)
-							// Single click selects instantly (also on the first
-							// click of a double); the simultaneous double-click
-							// loads the track into the waveform.
-							.onTapGesture { selectedTrackID = track.id }
-							.simultaneousGesture(
-								TapGesture(count: 2)
-									.onEnded { Task { await library.load(track) } }
-							)
-						}
-					}
-				}
+				trackList
 			}
 
 			Spacer(minLength: 0)
@@ -187,6 +177,69 @@ private struct Sidebar: View {
 		.padding(.top, 48) // clear the top-left toggle
 		.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 		.background(Theme.surface)
+	}
+
+	/// A themed plain List rather than a LazyVStack: List provides native
+	/// drag-reorder (`onMove`) and external-drop insertion (`onInsert`), both
+	/// drawing the standard insertion line between rows / below the last row.
+	private var trackList: some View {
+		List {
+			ForEach(library.tracks) { track in
+				TrackRow(
+					track: track,
+					isCurrent: track.id == library.currentTrackID,
+					isSelected: track.id == selectedTrackID
+				)
+				// Single click selects instantly (also on the first
+				// click of a double); the simultaneous double-click
+				// loads the track into the waveform.
+				.onTapGesture { selectedTrackID = track.id }
+				.simultaneousGesture(
+					TapGesture(count: 2)
+						.onEnded { Task { await library.load(track) } }
+				)
+				.listRowSeparator(.hidden)
+				.listRowInsets(EdgeInsets(top: 1, leading: 0, bottom: 1, trailing: 0))
+			}
+			.onMove { source, destination in
+				library.move(fromOffsets: source, toOffset: destination)
+			}
+			.onInsert(of: [.fileURL]) { index, providers in
+				Task {
+					let urls = await LibraryViewModel.urls(from: providers)
+					await library.addDropped(urls: urls, at: index)
+				}
+			}
+		}
+		.listStyle(.plain)
+		.scrollContentBackground(.hidden)
+		// Cancel the List's built-in content inset so rows align with the
+		// import button above.
+		.padding(.horizontal, -10)
+	}
+
+	/// Empty-library state doubling as the drop target (the List handles drops
+	/// once rows exist).
+	private var emptyDropZone: some View {
+		Text("Drop audio files or folders here")
+			.font(.caption)
+			.foregroundStyle(Theme.textSecondary)
+			.frame(maxWidth: .infinity, minHeight: 100)
+			.background(
+				RoundedRectangle(cornerRadius: Theme.panelCorner)
+					.strokeBorder(
+						emptyDropTargeted ? Theme.accent.opacity(0.6) : Theme.panelBorder,
+						lineWidth: emptyDropTargeted ? 2 : 1
+					)
+			)
+			.onDrop(of: [.fileURL], isTargeted: $emptyDropTargeted) { providers in
+				guard !providers.isEmpty else { return false }
+				Task {
+					let urls = await LibraryViewModel.urls(from: providers)
+					await library.addDropped(urls: urls)
+				}
+				return true
+			}
 	}
 }
 

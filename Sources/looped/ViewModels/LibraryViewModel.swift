@@ -53,10 +53,11 @@ final class LibraryViewModel: ObservableObject {
 		}
 	}
 
-	/// The single intake path (the open panel now; drag & drop later): dedupes
-	/// by standardized URL, skips non-audio files silently, reads title +
-	/// duration off-main, then publishes the appended rows on main.
-	func add(urls: [URL]) async {
+	/// The single intake path (open panel + drag & drop): dedupes by
+	/// standardized URL, skips non-audio files silently, reads title + duration
+	/// off-main, then publishes the new rows on main — inserted at `index`
+	/// (clamped; e.g. a drop between two rows) or appended when nil.
+	func add(urls: [URL], at index: Int? = nil) async {
 		var seen = await MainActor.run { Set(tracks.map { $0.url.standardizedFileURL }) }
 		var added: [Track] = []
 		for url in urls {
@@ -66,24 +67,52 @@ final class LibraryViewModel: ObservableObject {
 			added.append(await makeTrack(url: url))
 		}
 		guard !added.isEmpty else { return }
-		await MainActor.run { tracks.append(contentsOf: added) }
+		await MainActor.run {
+			if let index {
+				tracks.insert(contentsOf: added, at: min(max(index, 0), tracks.count))
+			} else {
+				tracks.append(contentsOf: added)
+			}
+		}
+	}
+
+	/// Reorder rows (the List's `.onMove` drag). Offsets come straight from
+	/// SwiftUI, so `Array.move` semantics apply.
+	@MainActor func move(fromOffsets: IndexSet, toOffset: Int) {
+		tracks.move(fromOffsets: fromOffsets, toOffset: toOffset)
 	}
 
 	// MARK: - Drag & drop intake
 
-	/// Drop intake: expands folders into the supported audio files inside, then
-	/// feeds the regular `add(urls:)` path. Mirrors `openFiles()`: when the
+	/// Library-zone drop intake: expands folders into the supported audio files
+	/// inside, then feeds the regular `add(urls:at:)` path (`index` = the List
+	/// insertion point under the drop line). Mirrors `openFiles()`: when the
 	/// library was empty, the first added track is loaded (no autoplay).
 	/// This type isn't main-actor-bound, so the folder walk runs off-main.
-	func addDropped(urls: [URL]) async {
+	func addDropped(urls: [URL], at index: Int? = nil) async {
 		let expanded = Self.expandingFolders(in: urls)
 		guard !expanded.isEmpty else { return }
 
 		let wasEmpty = await MainActor.run { tracks.isEmpty }
-		await add(urls: expanded)
+		await add(urls: expanded, at: index)
 		if wasEmpty, let first = await MainActor.run(body: { tracks.first }) {
 			await load(first)
 		}
+	}
+
+	/// Waveform-zone drop intake: the first supported dropped file is added to
+	/// the library (deduped — an already-present track isn't duplicated) and
+	/// loaded immediately.
+	func loadDropped(urls: [URL]) async {
+		let expanded = Self.expandingFolders(in: urls)
+		guard let first = expanded.first(where: { Track.isSupported(url: $0) }) else { return }
+
+		await add(urls: [first])
+		let standardized = first.standardizedFileURL
+		let track = await MainActor.run {
+			tracks.first { $0.url.standardizedFileURL == standardized }
+		}
+		if let track { await load(track) }
 	}
 
 	/// Recursively expands folder URLs into the supported audio files inside
