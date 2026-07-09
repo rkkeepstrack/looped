@@ -122,6 +122,8 @@ struct ContentView: View {
 /// Collapsible left panel: the import button + the track library list.
 private struct Sidebar: View {
 	@EnvironmentObject var library: LibraryViewModel
+	/// Row picked by a single click — purely visual until a double-click plays it.
+	@State private var selectedTrackID: UUID?
 
 	var body: some View {
 		VStack(alignment: .leading, spacing: 14) {
@@ -142,10 +144,22 @@ private struct Sidebar: View {
 				ScrollView {
 					LazyVStack(alignment: .leading, spacing: 2) {
 						ForEach(library.tracks) { track in
-							TrackRow(track: track, isCurrent: track.id == library.currentTrackID)
-								.onTapGesture {
-									Task { await library.play(track) }
-								}
+							TrackRow(
+								track: track,
+								isCurrent: track.id == library.currentTrackID,
+								isSelected: track.id == selectedTrackID
+							)
+							// Double-click loads + plays; a single click only
+							// selects. `exclusively` keeps the single-tap from
+							// firing on the first click of a double.
+							.gesture(
+								TapGesture(count: 2)
+									.onEnded { Task { await library.play(track) } }
+									.exclusively(
+										before: TapGesture()
+											.onEnded { selectedTrackID = track.id }
+									)
+							)
 						}
 					}
 				}
@@ -160,10 +174,12 @@ private struct Sidebar: View {
 	}
 }
 
-/// One library row: title + duration; the current track reads in accent orange.
+/// One library row: title + duration; the current track reads in accent orange,
+/// the (single-click) selected row gets a lighter background.
 private struct TrackRow: View {
 	let track: Track
 	let isCurrent: Bool
+	let isSelected: Bool
 	@State private var hovering = false
 
 	var body: some View {
@@ -187,7 +203,7 @@ private struct TrackRow: View {
 		.frame(maxWidth: .infinity, alignment: .leading)
 		.background(
 			RoundedRectangle(cornerRadius: 6)
-				.fill(hovering ? Color.white.opacity(0.06) : Color.clear)
+				.fill(isSelected ? Color.white.opacity(0.12) : hovering ? Color.white.opacity(0.06) : Color.clear)
 		)
 		.contentShape(Rectangle())
 		.onHover { hovering = $0 }
