@@ -7,7 +7,6 @@
 
 import AppKit
 import DSWaveformImage
-import DSWaveformImageViews
 import SwiftUI
 
 struct WaveformDisplayView: View {
@@ -21,40 +20,45 @@ struct WaveformDisplayView: View {
 		ZStack {
 			if let url = audioPlayer.audioURL {
 				GeometryReader { geo in
-					let width = geo.size.width
-					let height = geo.size.height
-					let time = audioPlayer.currentTime
-					// A bucket-aligned chunk around the playhead — translated smoothly
-					// via `offset`, so only a viewport-sized slice is ever drawn.
-					let win = offsetCalculator.window(playbackTime: time)
+					// `.animation` re-evaluates per display frame while playing, so the pan
+					// advances with the display clock instead of the coarser 0.03 s state
+					// timer (whose beat against the refresh rate made the scroll judder).
+					TimelineView(.animation(minimumInterval: nil, paused: !audioPlayer.isPlaying)) { _ in
+						let width = geo.size.width
+						let height = geo.size.height
+						let time = audioPlayer.livePlaybackTime()
+						// A bucket-aligned chunk around the playhead — translated smoothly
+						// via `offset`, so only a viewport-sized slice is ever drawn.
+						let win = offsetCalculator.window(playbackTime: time)
 
-					ZStack {
-						// Panning chunk: waveform + loop markers, offset under the iterator.
 						ZStack {
-							WaveformLiveCanvas(samples: win.samples, configuration: configuration(color: Theme.waveformUpcoming))
-								.frame(width: win.width, height: height)
-							WaveformLiveCanvas(samples: win.samples, configuration: configuration(color: Theme.waveformPlayed))
-								.frame(width: win.width, height: height)
-								.mask(alignment: .leading) { Rectangle().frame(width: win.playheadX) }
+							// Panning chunk: waveform + loop markers, offset under the iterator.
+							ZStack {
+								SyncWaveformCanvas(samples: win.samples, configuration: configuration(color: Theme.waveformUpcoming))
+									.frame(width: win.width, height: height)
+								SyncWaveformCanvas(samples: win.samples, configuration: configuration(color: Theme.waveformPlayed))
+									.frame(width: win.width, height: height)
+									.mask(alignment: .leading) { Rectangle().frame(width: win.playheadX) }
 
-							loopOverlay(win: win, height: height)
+								loopOverlay(win: win, height: height)
+							}
+							.frame(width: win.width, height: height)
+							.offset(x: win.offset)
+
+							// Fixed center iterator (playhead).
+							Rectangle()
+								.fill(Theme.iterator)
+								.frame(width: 2)
 						}
-						.frame(width: win.width, height: height)
-						.offset(x: win.offset)
-
-						// Fixed center iterator (playhead).
-						Rectangle()
-							.fill(Theme.iterator)
-							.frame(width: 2)
+						.clipped()
+						.onAppear {
+							offsetCalculator.waveformWidth = width
+							prepareWaveform(url: url)
+						}
+						.onChange(of: width) { _, newWidth in offsetCalculator.waveformWidth = newWidth }
+						.onChange(of: audioPlayer.audioURL) { _, _ in prepareWaveform(url: audioPlayer.audioURL) }
+						.onChange(of: audioPlayer.duration) { _, _ in prepareWaveform(url: audioPlayer.audioURL) }
 					}
-					.clipped()
-					.onAppear {
-						offsetCalculator.waveformWidth = width
-						prepareWaveform(url: url)
-					}
-					.onChange(of: width) { _, newWidth in offsetCalculator.waveformWidth = newWidth }
-					.onChange(of: audioPlayer.audioURL) { _, _ in prepareWaveform(url: audioPlayer.audioURL) }
-					.onChange(of: audioPlayer.duration) { _, _ in prepareWaveform(url: audioPlayer.audioURL) }
 				}
 			} else {
 				Text("No audio file loaded")
@@ -148,5 +152,30 @@ struct WaveformDisplayView: View {
 			verticalScalingFactor: 0.9,
 			shouldAntialias: true
 		)
+	}
+}
+
+// MARK: - Synchronous waveform canvas
+
+/// A `WaveformLiveCanvas` equivalent that draws **synchronously** (`rendersAsynchronously:
+/// false`). The windowed renderer re-slices the visible chunk almost every refresh tick and
+/// leans on a compensating `.offset` to keep the motion smooth; DSWaveformImage's async canvas
+/// presents its redraw a frame late, so the fresh slice lags the offset and the seam shimmers
+/// at the reslice cadence (bug-fixes.md #5). Drawing on the render pass commits the slice and
+/// the offset together, killing the flicker. Same `WaveformImageDrawer` call as the library
+/// view; only the presentation timing differs.
+private struct SyncWaveformCanvas: View {
+	let samples: [Float]
+	let configuration: Waveform.Configuration
+	var renderer: WaveformRenderer = LinearWaveformRenderer()
+
+	@StateObject private var drawer = WaveformImageDrawer()
+
+	var body: some View {
+		Canvas(rendersAsynchronously: false) { context, size in
+			context.withCGContext { cgContext in
+				drawer.draw(waveform: samples, on: cgContext, with: configuration.with(size: size), renderer: renderer)
+			}
+		}
 	}
 }

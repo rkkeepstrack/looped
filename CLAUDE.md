@@ -67,7 +67,10 @@ be mocked.
   `audioURL`), owns the 0.03s refresh `Timer` (installed in `.common` run-loop modes so the
   waveform keeps updating during AppKit event tracking), and turns view intents
   (`openFile`, `togglePlayPause`, `stop`, `jumpTo`, `setLoopStart/End`, `updateRate/Volume`) into
-  calls on the injected services. Owns no audio graph and no view layout.
+  calls on the injected services. Also exposes `livePlaybackTime()`, an uncached read of the
+  playback clock (no observer invalidation) for per-display-frame rendering — the waveform's
+  `TimelineView` uses it instead of the timer-published `currentTime` (which feeds the labels).
+  Owns no audio graph and no view layout.
 - **`WaveformViewModel`** (`ViewModels/WaveformViewModel.swift`) — observable state + gestures for
   the waveform (was `OffsetCalculator`). Holds `@Published` `samples` / `waveformWidth` /
   `isScrolling` / `currentScrollOffset`, owns scrubbing + the snap-back animation
@@ -80,7 +83,9 @@ be mocked.
   "player": owns the graph `AVAudioEngine → AVAudioPlayerNode → AVAudioUnitTimePitch →
   mainMixerNode` and the transport (`play/pause/stop/seek`), loop scheduling
   (`scheduleLoop`/`clearLoop`, a sliced `.loops` buffer), and the playback clock (`currentTime()`,
-  loop-aware). `setSource(file:format:)` reconnects the graph at the file's sample rate so the raw
+  loop-aware; projected onto the wall clock via the render timestamp's host time — the
+  buffer's *presentation* time — and low-pass filtered, so it's continuous rather than
+  quantized to the ~6–12ms render cycle). `setSource(file:format:)` reconnects the graph at the file's sample rate so the raw
   `.loops` buffer plays at the correct pitch.
 - **`AudioFileService`** / `DefaultAudioFileService` (`Services/AudioFileService.swift`) — decodes
   a URL into a `LoadedAudio` (`async`, off-main); URL-based and UI-free (the open panel lives in
@@ -112,7 +117,7 @@ be mocked.
 | `Sources/looped/ViewModels/WaveformViewModel.swift` | Waveform observable state + scrubbing/snap-back (was `OffsetCalculator`); delegates windowing/analysis to `WaveformService`. |
 | `Sources/looped/Views/ContentView.swift` | Root layout: animated collapsible **`Sidebar`** (private; import button now, track list in the player-features plan) + a top-left toggle (`@AppStorage "sidebarOpen"`) + centered header (name + `currentTime | fileTime`) + waveform + bottom bar; hosts `KeyboardHandler`. |
 | `Sources/looped/Views/ControlsView.swift` | The bottom bar: Volume + Pitch (=rate, log ~0.5×–2×) `CompactSlider`s bottom-left, play/pause + stop center, `LoopPanel` (A/B + Reset, disabled `«`/`»` nudge arrows reserved for the player-features plan) bottom-right. `CompactSlider`/`LoopPanel` are private. |
-| `Sources/looped/Views/WaveformView.swift` | **`WaveformDisplayView`** — windowed render: two viewport-sized `WaveformLiveCanvas` layers (gray upcoming + orange played, masked to the playhead) fed the visible sample slice from `WaveformViewModel`, plus A/B markers + shaded loop region (`.position`) and the center iterator; drives scroll via `ScrollObserverView`. |
+| `Sources/looped/Views/WaveformView.swift` | **`WaveformDisplayView`** — windowed render: two viewport-sized `SyncWaveformCanvas` layers (gray upcoming + orange played, masked to the playhead) fed the visible sample slice from `WaveformViewModel`, plus A/B markers + shaded loop region (`.position`) and the center iterator; drives scroll via `ScrollObserverView`; while playing, a `TimelineView(.animation)` re-evaluates the window per display frame (the 0.03s timer only feeds labels) via `PlayerViewModel.livePlaybackTime()`, so the pan tracks the display clock. `SyncWaveformCanvas` (private) is a `WaveformLiveCanvas` clone that draws **synchronously** (`Canvas(rendersAsynchronously: false)`, same `WaveformImageDrawer` call) so the per-tick reslice and its compensating `.offset` commit in one pass — the library's async canvas lagged a frame and made the seam flicker. |
 | `Sources/looped/Views/Theme.swift` | Shared design tokens (`enum Theme`): warm-orange-on-black palette, waveform colors, and layout metrics (sidebar width, panel corner/border). |
 | `Sources/looped/Views/ScrollObserverView.swift` | `NSViewRepresentable` capturing scroll-wheel + mouse-drag → `WaveformViewModel`. |
 | `Sources/looped/Utils/KeyboardHandler.swift` | `NSViewRepresentable` global key monitor; spacebar → play/pause. |

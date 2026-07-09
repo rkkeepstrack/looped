@@ -165,6 +165,13 @@ final class PlayerViewModel: ObservableObject {
 		playback.clearLoop(resumeAt: currentTime)
 	}
 
+	/// Uncached read of the playback clock, for per-display-frame rendering
+	/// (`TimelineView`). Unlike `currentTime` (published on the 0.03 s timer for
+	/// labels), this doesn't invalidate observers.
+	func livePlaybackTime() -> TimeInterval {
+		isPlaying ? playback.currentTime() : currentTime
+	}
+
 	// MARK: - Derived
 
 	func getProgressInPercent() -> Double {

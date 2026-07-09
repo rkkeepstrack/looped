@@ -38,6 +38,9 @@ final class AVPlaybackService: PlaybackService {
 	private var isScheduled = false
 	private var lastPausedTime: TimeInterval = 0
 
+	/// Low-passed (elapsed − wall-clock) offset; see `currentTime()`.
+	private var smoothedClockOffset: Double?
+
 	private var loopBuffer: AVAudioPCMBuffer?
 	private(set) var isLooping = false
 	private var loopStartTime: TimeInterval = 0
@@ -106,7 +109,7 @@ final class AVPlaybackService: PlaybackService {
 		guard frameCount > 0 else { return }
 
 		let wasPlaying = player.isPlaying
-		if wasPlaying { player.stop() }
+		player.stop()
 
 		player.scheduleSegment(file, startingFrame: startFrame, frameCount: frameCount, at: nil, completionHandler: nil)
 		isScheduled = true
@@ -146,7 +149,29 @@ final class AVPlaybackService: PlaybackService {
 		      let playerTime = player.playerTime(forNodeTime: nodeTime)
 		else { return lastPausedTime }
 
-		let elapsed = Double(playerTime.sampleTime) / (playerTime.sampleRate * Double(timePitch.rate))
+		var elapsed = Double(playerTime.sampleTime) / playerTime.sampleRate
+		// `lastRenderTime` only advances once per render buffer (~6–12 ms), which makes
+		// the clock step in quanta and the waveform pan judder. While playing, project
+		// onto the wall clock: the render timestamp's host time is the buffer's future
+		// *presentation* time, so `now - rendered` (negative, ≈ the output lead) shifts
+		// the sample position to what's audible now — and varies smoothly between
+		// render cycles. The render timestamps themselves jitter by up to a buffer, so
+		// low-pass the (elapsed − now) offset; a jump > 50 ms (seek, resume) snaps.
+		if player.isPlaying, nodeTime.isHostTimeValid {
+			let now = AVAudioTime.seconds(forHostTime: mach_absolute_time())
+			let rendered = AVAudioTime.seconds(forHostTime: nodeTime.hostTime)
+			elapsed += min(max(-0.25, now - rendered), 0.25)
+
+			let offset = elapsed - now
+			if let smoothed = smoothedClockOffset, abs(offset - smoothed) < 0.05 {
+				smoothedClockOffset = smoothed + 0.1 * (offset - smoothed)
+			} else {
+				smoothedClockOffset = offset
+			}
+			elapsed = now + smoothedClockOffset!
+		}
+		// The presentation lead can push a just-started clock slightly negative.
+		elapsed = max(0, elapsed / Double(timePitch.rate))
 
 		// While looping, the render clock keeps counting across iterations; fold it
 		// back into the [A, B] window so the reported time stays in range.

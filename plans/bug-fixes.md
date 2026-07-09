@@ -14,10 +14,3 @@ not priority.
 4. **Scrub should hold the playhead.** While scrubbing, the playhead should stay fixed at
    the current time and the audio should scroll out of view under it — rather than the
    pointer scrolling along with the audio.
-5. **Waveform flickers during playback.** The windowed renderer (on `main`, commit
-   `814d7f1`) flickers at regular-ish intervals while playing. The pre-windowing version
-   `6436bca` is smooth but caps width (~12000px → no long songs at zoom). The A/B choice
-   is still open.
-6. **Display-synced smooth pan.** Drive the waveform pan from `TimelineView(.animation)`
-   so it advances per display frame instead of the 0.03 s refresh timer (smoother scroll;
-   may also help #5).
