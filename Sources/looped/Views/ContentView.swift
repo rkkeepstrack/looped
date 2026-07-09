@@ -192,8 +192,12 @@ private struct Sidebar: View {
 				)
 				// Single click selects instantly (also on the first
 				// click of a double); the simultaneous double-click
-				// loads the track into the waveform.
-				.onTapGesture { selectedTrackID = track.id }
+				// loads the track into the waveform. Both taps must be
+				// simultaneousGestures: a plain .onTapGesture claims the
+				// mouse-down and the List's row drag (reordering) never starts.
+				.simultaneousGesture(
+					TapGesture().onEnded { selectedTrackID = track.id }
+				)
 				.simultaneousGesture(
 					TapGesture(count: 2)
 						.onEnded { Task { await library.load(track) } }
