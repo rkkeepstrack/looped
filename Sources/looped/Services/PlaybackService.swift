@@ -25,7 +25,13 @@ protocol PlaybackService: AnyObject {
 	var isLooping: Bool { get }
 	/// Current playback position in the source timeline (folded into [A, B] while looping).
 	func currentTime() -> TimeInterval
+	/// Tempo without transposition (time-pitch unit; artifacts at extremes).
 	func setRate(_ rate: Float)
+	/// Transposition in cents without tempo change (time-pitch unit).
+	func setPitch(_ cents: Float)
+	/// Tape-style speed: tempo + pitch together via plain resampling (varispeed
+	/// unit; artifact-free) — used by the synced pitch/rate mode.
+	func setVarispeed(_ rate: Float)
 	func setVolume(_ volume: Float)
 }
 
@@ -33,6 +39,7 @@ final class AVPlaybackService: PlaybackService {
 	private let engine = AVAudioEngine()
 	private let player = AVAudioPlayerNode()
 	private let timePitch = AVAudioUnitTimePitch()
+	private let varispeed = AVAudioUnitVarispeed()
 
 	private var file: AVAudioFile?
 	private var isScheduled = false
@@ -49,9 +56,17 @@ final class AVPlaybackService: PlaybackService {
 	init() {
 		engine.attach(player)
 		engine.attach(timePitch)
-		engine.connect(player, to: timePitch, format: nil)
-		engine.connect(timePitch, to: engine.mainMixerNode, format: nil)
+		engine.attach(varispeed)
+		connectGraph(format: nil)
 		do { try engine.start() } catch { print("Engine failed: \(error)") }
+	}
+
+	/// `player → timePitch → varispeed → mainMixer`. Both effect units stay in the
+	/// graph permanently; the inactive one is kept neutral (rate 1 / pitch 0).
+	private func connectGraph(format: AVAudioFormat?) {
+		engine.connect(player, to: timePitch, format: format)
+		engine.connect(timePitch, to: varispeed, format: format)
+		engine.connect(varispeed, to: engine.mainMixerNode, format: format)
 	}
 
 	// MARK: - Source
@@ -67,8 +82,7 @@ final class AVPlaybackService: PlaybackService {
 		// Reconnect at the file's sample rate. `scheduleFile`/`Segment` sample-rate
 		// convert automatically, but `scheduleBuffer` (looping) plays raw at the
 		// node's output rate — matching the format keeps both paths in tune.
-		engine.connect(player, to: timePitch, format: format)
-		engine.connect(timePitch, to: engine.mainMixerNode, format: format)
+		connectGraph(format: format)
 	}
 
 	// MARK: - Transport
@@ -154,7 +168,9 @@ final class AVPlaybackService: PlaybackService {
 		// No rate division: that made `currentTime` drift at any rate ≠ 1× and broke
 		// the loop fold (bug-fixes.md #2).
 		var elapsed = Double(playerTime.sampleTime) / playerTime.sampleRate
-		let rate = Double(timePitch.rate)
+		// Source frames are consumed at the *product* of the two effect rates
+		// (harness-verified: clock advance per wall second == timePitch × varispeed).
+		let rate = Double(timePitch.rate) * Double(varispeed.rate)
 		// `lastRenderTime` only advances once per render buffer (~6–12 ms), which makes
 		// the clock step in quanta and the waveform pan judder. While playing, project
 		// onto the wall clock: the render timestamp's host time is the buffer's future
@@ -191,6 +207,14 @@ final class AVPlaybackService: PlaybackService {
 
 	func setRate(_ rate: Float) {
 		timePitch.rate = rate
+	}
+
+	func setPitch(_ cents: Float) {
+		timePitch.pitch = cents
+	}
+
+	func setVarispeed(_ rate: Float) {
+		varispeed.rate = rate
 	}
 
 	func setVolume(_ volume: Float) {

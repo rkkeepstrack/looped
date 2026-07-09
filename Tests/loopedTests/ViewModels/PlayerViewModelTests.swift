@@ -176,6 +176,48 @@ final class PlayerViewModelTests {
 		#expect(abs((fake.lastVolume ?? -1) - 0.25) <= 1e-6)
 	}
 
+	@Test func independentModeDrivesTimePitchAndNeutralizesVarispeed() async {
+		let vm = await loadedViewModel()
+		vm.rate = 1.5
+		vm.pitchSemitones = -3
+		vm.updatePitch()
+
+		#expect(fake.lastVarispeed == 1)
+		#expect(fake.lastRate == 1.5)
+		#expect(fake.lastPitchCents == -300)
+	}
+
+	@Test func syncModeDrivesVarispeedAndNeutralizesTimePitch() async {
+		let vm = await loadedViewModel()
+		vm.rate = 0.75
+		vm.pitchSemitones = 5
+		vm.updateSync(true)
+
+		#expect(fake.lastRate == 1)
+		#expect(fake.lastPitchCents == 0)
+		#expect(fake.lastVarispeed == 0.75)
+
+		// Rate edits while synced keep flowing to the varispeed unit only.
+		vm.rate = 1.25
+		vm.updateRate()
+		#expect(fake.lastVarispeed == 1.25)
+		#expect(fake.lastRate == 1)
+
+		// Leaving sync restores the independent values.
+		vm.updateSync(false)
+		#expect(fake.lastVarispeed == 1)
+		#expect(fake.lastRate == 1.25)
+		#expect(fake.lastPitchCents == 500)
+	}
+
+	@Test func impliedSyncSemitonesFollowsTheRate() async {
+		let vm = await loadedViewModel()
+		vm.rate = 2
+		#expect(abs(vm.impliedSyncSemitones - 12) <= 1e-4)
+		vm.rate = 1
+		#expect(abs(vm.impliedSyncSemitones) <= 1e-4)
+	}
+
 	// MARK: - Derived
 
 	@Test func progressInPercent() async {

@@ -62,11 +62,11 @@ be mocked.
 **View-models** (`ObservableObject`, the SwiftUI-facing state; think Angular component class):
 
 - **`PlayerViewModel`** (`ViewModels/PlayerViewModel.swift`) — the playback presentation layer.
-  Holds the `@Published` state the views bind to (`isPlaying`, `currentTime`, `duration`, `rate`,
+  Holds the `@Published` state the views bind to (`isPlaying`, `currentTime`, `duration`, `rate`, `pitchSemitones`, `syncPitchAndRate`,
   `loopStart`/`loopEnd` `(TimeInterval?, AVAudioFramePosition?)` tuples, `currentFileName`,
   `audioURL`), owns the 0.03s refresh `Timer` (installed in `.common` run-loop modes so the
   waveform keeps updating during AppKit event tracking), and turns view intents
-  (`openFile`, `togglePlayPause`, `stop`, `jumpTo`, `setLoopStart/End`, `updateRate/Volume`) into
+  (`openFile`, `togglePlayPause`, `stop`, `jumpTo`, `setLoopStart/End`, `updateRate/Pitch/Sync/Volume`) into
   calls on the injected services. Also exposes `livePlaybackTime()`, an uncached read of the
   playback clock (no observer invalidation) for per-display-frame rendering — the waveform's
   `TimelineView` uses it instead of the timer-published `currentTime` (which feeds the labels).
@@ -84,12 +84,16 @@ be mocked.
 
 - **`PlaybackService`** / `AVPlaybackService` (`Services/PlaybackService.swift`) — the audio
   "player": owns the graph `AVAudioEngine → AVAudioPlayerNode → AVAudioUnitTimePitch →
-  mainMixerNode` and the transport (`play/pause/stop/seek`), loop scheduling
+  AVAudioUnitVarispeed → mainMixerNode` (`setRate`/`setPitch` drive the time-pitch unit,
+  `setVarispeed` the resampler; the inactive unit stays neutral) and the transport
+  (`play/pause/stop/seek`), loop scheduling
   (`scheduleLoop`/`clearLoop`, a sliced `.loops` buffer), and the playback clock (`currentTime()`,
   loop-aware; projected onto the wall clock via the render timestamp's host time — the
   buffer's *presentation* time — and low-pass filtered, so it's continuous rather than
   quantized to the ~6–12ms render cycle. The player node's sample clock counts *source*
-  frames — it sits upstream of the time-pitch unit — so no rate division). `setSource(file:format:)` reconnects the graph at the file's sample rate so the raw
+  frames — it sits upstream of both effect units — which are consumed at the
+  `timePitch.rate × varispeed.rate` product; the wall-clock smoothing uses that product,
+  no division back to source time). `setSource(file:format:)` reconnects the graph at the file's sample rate so the raw
   `.loops` buffer plays at the correct pitch.
 - **`AudioFileService`** / `DefaultAudioFileService` (`Services/AudioFileService.swift`) — decodes
   a URL into a `LoadedAudio` (`async`, off-main); URL-based and UI-free (the open panel lives in
@@ -120,7 +124,7 @@ be mocked.
 | `Sources/looped/ViewModels/PlayerViewModel.swift` | Playback state/intents/timer; drives the services (see Architecture). |
 | `Sources/looped/ViewModels/WaveformViewModel.swift` | Waveform observable state + scrubbing/snap-back (was `OffsetCalculator`); delegates windowing/analysis to `WaveformService`. |
 | `Sources/looped/Views/ContentView.swift` | Root layout: animated collapsible **`Sidebar`** (private; import button now, track list in the player-features plan) + a top-left toggle (`@AppStorage "sidebarOpen"`) + centered header (name + `currentTime | fileTime`) + waveform + bottom bar; hosts `KeyboardHandler`. |
-| `Sources/looped/Views/ControlsView.swift` | The bottom bar: Volume + Pitch (=rate, log ~0.5×–2×) `CompactSlider`s bottom-left, play/pause + stop center, `LoopPanel` (A/B + Reset, disabled `«`/`»` nudge arrows reserved for the player-features plan) bottom-right; sliders show the formatted current value in place of their label while dragging. `CompactSlider`/`LoopPanel` are private. |
+| `Sources/looped/Views/ControlsView.swift` | The bottom bar: Volume + Rate (log ~0.5×–2×, labeled "Speed" when synced) + Pitch (±12 semitones) `CompactSlider`s and a "Sync pitch & rate" checkbox (varispeed mode: one slider = tempo+pitch together, pitch slider disabled showing the implied shift) bottom-left, play/pause + stop center, `LoopPanel` (A/B + Reset, disabled `«`/`»` nudge arrows reserved for the player-features plan) bottom-right; sliders show the formatted current value in place of their label while dragging; clicking a slider's label (shows "Reset" on hover) resets it to its default (100 % / 1.0× / 0 st). `CompactSlider`/`LoopPanel` are private. |
 | `Sources/looped/Views/WaveformView.swift` | **`WaveformDisplayView`** — windowed render: two viewport-sized `SyncWaveformCanvas` layers (gray upcoming + orange played, masked to the playhead) fed the visible sample slice from `WaveformViewModel`, plus a light-blue scrub-highlight layer (`Theme.waveformScrub`, masked between the played edge and the scrub cursor while scrubbing), A/B markers + shaded loop region (`.position`) and the center iterator; drives scroll via `ScrollObserverView`; while playing, a `TimelineView(.animation)` re-evaluates the window per display frame (the 0.03s timer only feeds labels) via `PlayerViewModel.livePlaybackTime()`, so the pan tracks the display clock. `SyncWaveformCanvas` (private) is a `WaveformLiveCanvas` clone that draws **synchronously** (`Canvas(rendersAsynchronously: false)`, same `WaveformImageDrawer` call) so the per-tick reslice and its compensating `.offset` commit in one pass — the library's async canvas lagged a frame and made the seam flicker. |
 | `Sources/looped/Views/Theme.swift` | Shared design tokens (`enum Theme`): warm-orange-on-black palette, waveform colors, and layout metrics (sidebar width, panel corner/border). |
 | `Sources/looped/Views/ScrollObserverView.swift` | `NSViewRepresentable` capturing scroll-wheel + mouse-drag → `WaveformViewModel`. |

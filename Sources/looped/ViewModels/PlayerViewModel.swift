@@ -20,6 +20,12 @@ final class PlayerViewModel: ObservableObject {
 	@Published var currentTime: TimeInterval = 0
 	@Published var duration: TimeInterval?
 	@Published var rate: Float = 1.0
+	/// Transposition in semitones (−12…+12), independent of tempo.
+	@Published var pitchSemitones: Float = 0
+	/// Synced ("varispeed") mode: one control moves tempo + pitch together via a
+	/// plain resampler — artifact-free, like tape speed. When off, `rate` and
+	/// `pitchSemitones` drive the time-pitch unit independently.
+	@Published var syncPitchAndRate = false
 	@Published var loopStart: (TimeInterval?, AVAudioFramePosition?) = (nil, nil)
 	@Published var loopEnd: (TimeInterval?, AVAudioFramePosition?) = (nil, nil)
 	@Published var currentFileName: String?
@@ -117,7 +123,36 @@ final class PlayerViewModel: ObservableObject {
 	}
 
 	func updateRate() {
-		playback.setRate(rate)
+		applyPitchAndRate()
+	}
+
+	func updatePitch() {
+		applyPitchAndRate()
+	}
+
+	func updateSync(_ enabled: Bool) {
+		syncPitchAndRate = enabled
+		applyPitchAndRate()
+	}
+
+	/// The pitch shift the synced (varispeed) mode implies at the current rate —
+	/// shown on the disabled pitch slider so the UI reflects what's audible.
+	var impliedSyncSemitones: Float {
+		12 * log2(rate)
+	}
+
+	/// Push the full pitch/rate state to the engine. Neutralize the inactive unit
+	/// *before* raising the active one so mode switches never double-shift.
+	private func applyPitchAndRate() {
+		if syncPitchAndRate {
+			playback.setRate(1)
+			playback.setPitch(0)
+			playback.setVarispeed(rate)
+		} else {
+			playback.setVarispeed(1)
+			playback.setRate(rate)
+			playback.setPitch(pitchSemitones * 100)
+		}
 	}
 
 	func updateVolume(volume: Float) {

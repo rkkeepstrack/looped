@@ -24,6 +24,8 @@ final class FakePlaybackService: PlaybackService {
 	private(set) var lastLoopLength: TimeInterval?
 	private(set) var clearLoopCount = 0
 	private(set) var lastRate: Float?
+	private(set) var lastPitchCents: Float?
+	private(set) var lastVarispeed: Float?
 	private(set) var lastVolume: Float?
 
 	var isLooping = false
@@ -70,6 +72,14 @@ final class FakePlaybackService: PlaybackService {
 
 	func setRate(_ rate: Float) {
 		lastRate = rate
+	}
+
+	func setPitch(_ cents: Float) {
+		lastPitchCents = cents
+	}
+
+	func setVarispeed(_ rate: Float) {
+		lastVarispeed = rate
 	}
 
 	func setVolume(_ volume: Float) {
