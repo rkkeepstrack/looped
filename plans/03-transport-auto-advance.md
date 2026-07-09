@@ -24,6 +24,22 @@
 - A looping track never "ends" (fold in `currentTime()`) — auto-advance simply never
   fires while a loop is armed; that's correct, no special-casing.
 
+## Architecture note — revisit the VM→VM coupling here
+
+`LibraryViewModel` currently holds a direct `PlayerViewModel` reference (documented
+smell; it's the library↔playback bridge). This plan adds the *reverse* arrow too
+(`onTrackEnded` → library picks the next track), making the coupling bidirectional —
+the natural moment to fix it rather than pile on. Options (discussed 2026-07-09):
+
+1. **Minimal:** replace the stored `PlayerViewModel` with an injected closure
+   (`playTrack: (URL) async -> Bool`, returning load success so the library knows
+   whether to move `currentTrackID`), wired in `loopedApp` — mirroring how
+   `onTrackEnded` is wired in the other direction. Do at least this.
+2. **Cleaner (prefer if the wiring gets hairy):** extract a UI-free
+   playback-coordination store owning "current source + transport" state; both
+   view-models depend on it, `PlayerViewModel` becomes a thin projection, and
+   `apply(_:)`'s track-change reset choreography moves into it.
+
 ## Steps
 
 1. `next()/previous()` + tests (ordering, clamping, restart-on-previous rule).
