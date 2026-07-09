@@ -3,11 +3,25 @@
 Remaining work only. Completed plans were removed once shipped (see git history).
 Build/run/test and architecture live in the repo-root `CLAUDE.md`.
 
-- **[player-features.md](player-features.md)** — library, click-to-play, drag & drop,
-  loop nudge, pitch/rate + sync knob. ⬜ Not started.
-- **[bug-fixes.md](bug-fixes.md)** — open bugs & small enhancements (scrub highlight,
-  pitch/rate desync, live slider labels, scrub-holds-playhead, waveform flicker,
-  display-synced pan).
+The old monolithic player-features plan is split into reviewable slices, ordered;
+01→02→03 build on each other, 04/05 are independent, 06 is a stretch:
+
+- **[01-track-library.md](01-track-library.md)** — `Track` model, `LibraryViewModel`,
+  sidebar track list, click-to-play, multi-select open panel. ⬜
+- **[02-import-drag-drop.md](02-import-drag-drop.md)** — drop files/folders onto the
+  window → library intake. ⬜ (needs 01)
+- **[03-transport-auto-advance.md](03-transport-auto-advance.md)** — next/previous +
+  auto-advance at track end. ⬜ (needs 01)
+- **[04-loop-nudge.md](04-loop-nudge.md)** — wire the `«`/`»` loop-point nudge arrows. ⬜
+- **[05-pitch-rate-sync.md](05-pitch-rate-sync.md)** — independent Rate + Pitch sliders
+  with a varispeed sync toggle (touches the playback clock — read its notes). ⬜
+- **[06-library-persistence.md](06-library-persistence.md)** — persist the library
+  across launches (stretch; the app is unsandboxed, plain paths suffice). ⬜
+- **[bug-fixes.md](bug-fixes.md)** — open bugs. Currently empty.
+
+**Mockup:** `mockup/2026-07-08-ui-layout.png` (sidebar list, controls layout).
 
 **Done & shipped** (plan files removed): waveform striped rendering · seamless A/B loop
-points · UI redesign · service-oriented architecture split · windowed waveform rendering.
+points · UI redesign · service-oriented architecture split · windowed waveform
+rendering · display-synced smooth pan + wall-clock playback clock · scrub
+highlight/anchor · rate-desync fix · live slider labels.
