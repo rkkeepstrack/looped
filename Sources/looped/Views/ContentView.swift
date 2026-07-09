@@ -183,21 +183,19 @@ private struct Sidebar: View {
 	/// drag-reorder (`onMove`) and external-drop insertion (`onInsert`), both
 	/// drawing the standard insertion line between rows / below the last row.
 	private var trackList: some View {
-		List {
+		// Native selection binding (not a tap gesture): single click selects via
+		// the List itself, which keeps row drags (onMove reordering) working —
+		// SwiftUI tap gestures on the row claim the mouse-down and the
+		// NSTableView-backed drag never starts.
+		List(selection: $selectedTrackID) {
 			ForEach(library.tracks) { track in
 				TrackRow(
 					track: track,
-					isCurrent: track.id == library.currentTrackID,
-					isSelected: track.id == selectedTrackID
+					isCurrent: track.id == library.currentTrackID
 				)
-				// Single click selects instantly (also on the first
-				// click of a double); the simultaneous double-click
-				// loads the track into the waveform. Both taps must be
-				// simultaneousGestures: a plain .onTapGesture claims the
-				// mouse-down and the List's row drag (reordering) never starts.
-				.simultaneousGesture(
-					TapGesture().onEnded { selectedTrackID = track.id }
-				)
+				.tag(track.id)
+				// Double-click loads the track into the waveform; simultaneous
+				// so it observes without blocking selection or drags.
 				.simultaneousGesture(
 					TapGesture(count: 2)
 						.onEnded { Task { await library.load(track) } }
@@ -247,12 +245,12 @@ private struct Sidebar: View {
 	}
 }
 
-/// One library row: title + duration; the current track reads in accent orange,
-/// the (single-click) selected row gets a lighter background.
+/// One library row: title + duration; the current track reads in accent orange.
+/// Selection highlighting is the List's native rendering (system accent), not
+/// custom — required so native selection + row dragging keep working.
 private struct TrackRow: View {
 	let track: Track
 	let isCurrent: Bool
-	let isSelected: Bool
 	@State private var hovering = false
 
 	var body: some View {
@@ -276,7 +274,7 @@ private struct TrackRow: View {
 		.frame(maxWidth: .infinity, alignment: .leading)
 		.background(
 			RoundedRectangle(cornerRadius: 6)
-				.fill(isSelected ? Color.white.opacity(0.12) : hovering ? Color.white.opacity(0.06) : Color.clear)
+				.fill(hovering ? Color.white.opacity(0.06) : Color.clear)
 		)
 		.contentShape(Rectangle())
 		.onHover { hovering = $0 }
