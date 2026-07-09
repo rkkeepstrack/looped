@@ -92,16 +92,16 @@ struct WaveformDisplayView: View {
 					set: { offsetCalculator.currentScrollOffset = $0 }
 				),
 				onScrollChange: { _ in
-					offsetCalculator.onScrollChange()
+					offsetCalculator.onScrollChange(playbackTime: audioPlayer.livePlaybackTime())
 				},
 				onScrollEnd: {
-					let target = offsetCalculator.scrolledTime(playbackTime: audioPlayer.currentTime)
+					let target = offsetCalculator.scrolledTime(playbackTime: audioPlayer.livePlaybackTime())
 					if audioPlayer.jumpTo(time: target) {
 						// Seeked: the view is already at the target, snap immediately.
 						offsetCalculator.endScrubImmediately()
 					} else {
 						// Loop / out-of-bounds: ease back to the live playhead.
-						offsetCalculator.animateSnapBack()
+						offsetCalculator.animateSnapBack(playbackTime: audioPlayer.livePlaybackTime())
 					}
 				}
 			)

@@ -28,6 +28,10 @@ final class WaveformViewModel: ObservableObject {
 
 	@Published var isScrolling: Bool = false
 	@Published var currentScrollOffset: CGFloat = 0
+	/// Playback time latched when a scrub begins. While scrubbing, the viewport is
+	/// anchored here (not the advancing playback time), so the view holds still and
+	/// the played edge travels on — the user "holds" the audio while it runs away.
+	private var scrubAnchorTime: TimeInterval?
 	private var snapTimer: Timer?
 
 	// MARK: Analyzed samples (whole song, loaded once per URL)
@@ -75,9 +79,11 @@ final class WaveformViewModel: ObservableObject {
 	// MARK: - Window (delegated to the service)
 
 	/// Time shown at the viewport center (the playhead). While scrubbing it's the
-	/// live playhead shifted by the drag, so releasing eases back to live playback.
+	/// latched anchor shifted by the drag (frozen in song coordinates even though
+	/// playback runs on); during snap-back the anchor is cleared so the decaying
+	/// offset eases the view back onto the live playhead.
 	func centerTime(playbackTime: TimeInterval) -> TimeInterval {
-		isScrolling ? playbackTime - Double(currentScrollOffset / pixelsPerSecond) : playbackTime
+		isScrolling ? (scrubAnchorTime ?? playbackTime) - Double(currentScrollOffset / pixelsPerSecond) : playbackTime
 	}
 
 	func window(playbackTime: TimeInterval) -> WaveformWindow {
@@ -90,20 +96,23 @@ final class WaveformViewModel: ObservableObject {
 
 	// MARK: - Scrubbing
 
-	func onScrollChange() {
+	/// Called on every scroll/drag delta; latches the anchor on the first one.
+	func onScrollChange(playbackTime: TimeInterval) {
 		snapTimer?.invalidate()
+		if !isScrolling { scrubAnchorTime = playbackTime }
 		isScrolling = true
 	}
 
 	/// The center time to seek to when a scrub is released.
 	func scrolledTime(playbackTime: TimeInterval) -> TimeInterval {
-		playbackTime - Double(currentScrollOffset / pixelsPerSecond)
+		(scrubAnchorTime ?? playbackTime) - Double(currentScrollOffset / pixelsPerSecond)
 	}
 
 	/// End a scrub immediately (used when the release seeked — the view is already
 	/// at the target, so no animation is needed).
 	func endScrubImmediately() {
 		snapTimer?.invalidate()
+		scrubAnchorTime = nil
 		currentScrollOffset = 0
 		isScrolling = false
 	}
@@ -111,8 +120,14 @@ final class WaveformViewModel: ObservableObject {
 	/// Ease the scroll offset back to zero (converging on the live playhead) with a
 	/// small per-frame decay. Driven manually because `withAnimation` would only
 	/// tween view modifiers, not the re-sliced chunk — which desyncs the played edge.
-	func animateSnapBack() {
+	func animateSnapBack(playbackTime: TimeInterval) {
 		snapTimer?.invalidate()
+		// Rebase the offset from the frozen anchor onto the live playhead so the
+		// view's center is unchanged at release, then decays onto live playback.
+		if let anchor = scrubAnchorTime {
+			currentScrollOffset += CGFloat(playbackTime - anchor) * pixelsPerSecond
+			scrubAnchorTime = nil
+		}
 		guard currentScrollOffset != 0 else { isScrolling = false
 			return
 		}

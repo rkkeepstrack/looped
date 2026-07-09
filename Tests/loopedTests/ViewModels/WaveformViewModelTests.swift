@@ -28,7 +28,7 @@ struct WaveformViewModelTests {
 
 	@Test func scrollOffsetShiftsCenterTime() {
 		let vm = makeViewModel()
-		vm.onScrollChange()
+		vm.onScrollChange(playbackTime: 10)
 		#expect(vm.isScrolling)
 		// pixelsPerSecond == 100, so a 100 px scroll shifts the center by 1 s.
 		vm.currentScrollOffset = 100
@@ -36,9 +36,19 @@ struct WaveformViewModelTests {
 		#expect(vm.scrolledTime(playbackTime: 10) == 9)
 	}
 
+	@Test func scrubHoldsAnchorWhilePlaybackAdvances() {
+		let vm = makeViewModel()
+		vm.onScrollChange(playbackTime: 10) // anchor latched at 10
+		vm.currentScrollOffset = 100
+		// Playback runs on to 12; the viewport stays put (anchor − 1 s), so the
+		// audio progresses out of view while the user "holds" the waveform.
+		#expect(vm.centerTime(playbackTime: 12) == 9)
+		#expect(vm.scrolledTime(playbackTime: 12) == 9)
+	}
+
 	@Test func endScrubImmediatelyResetsState() {
 		let vm = makeViewModel()
-		vm.onScrollChange()
+		vm.onScrollChange(playbackTime: 0)
 		vm.currentScrollOffset = 42
 		vm.endScrubImmediately()
 		#expect(vm.currentScrollOffset == 0)
@@ -47,10 +57,21 @@ struct WaveformViewModelTests {
 
 	@Test func snapBackWithNoOffsetEndsScrubbingImmediately() {
 		let vm = makeViewModel()
-		vm.onScrollChange()
+		vm.onScrollChange(playbackTime: 5)
 		vm.currentScrollOffset = 0
-		vm.animateSnapBack() // guard branch: nothing to animate
+		vm.animateSnapBack(playbackTime: 5) // guard branch: nothing to animate
 		#expect(!vm.isScrolling)
+	}
+
+	@Test func snapBackRebasesTheFrozenAnchorOntoLivePlayback() {
+		let vm = makeViewModel()
+		vm.onScrollChange(playbackTime: 10)
+		vm.currentScrollOffset = 100 // center = 9
+		// Released at playback 12: the center must not jump (still 9), expressed as
+		// an offset from the live playhead so the decay converges onto playback.
+		vm.animateSnapBack(playbackTime: 12)
+		#expect(vm.currentScrollOffset == 300)
+		#expect(vm.centerTime(playbackTime: 12) == 9)
 	}
 
 	@Test func windowDelegatesToTheService() {

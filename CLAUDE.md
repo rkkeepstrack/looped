@@ -74,7 +74,10 @@ be mocked.
 - **`WaveformViewModel`** (`ViewModels/WaveformViewModel.swift`) — observable state + gestures for
   the waveform (was `OffsetCalculator`). Holds `@Published` `samples` / `waveformWidth` /
   `isScrolling` / `currentScrollOffset`, owns scrubbing + the snap-back animation
-  (`animateSnapBack`, a manual per-frame decay), and **delegates the windowing/analysis math to the
+  (`animateSnapBack`, a manual per-frame decay). A scrub latches an anchor time
+  (`onScrollChange(playbackTime:)`) so the viewport holds still in song coordinates while
+  playback runs on (the played edge travels out of view); release rebases the offset onto the
+  live playhead so the snap-back converges on playback. And it **delegates the windowing/analysis math to the
   injected `WaveformService`** (`window(playbackTime:)`, `prepare(url:duration:noiseFloor:)`).
 
 **Services** (plain, protocol-backed, no SwiftUI):
