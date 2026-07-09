@@ -231,14 +231,18 @@ private struct Sidebar: View {
 			TapGesture(count: 2)
 				.onEnded { Task { await library.load(track) } }
 		)
-		.gesture(reorderGesture(for: index, track: track))
+		// High priority so the drag wins gesture arbitration as soon as the
+		// cursor moves — attached after the taps it would otherwise have to
+		// wait them out, which read as the row needing a hard pull to pick
+		// up. Clicks are unaffected: a stationary press never becomes a drag.
+		.highPriorityGesture(reorderGesture(for: index, track: track))
 	}
 
 	/// Drag-to-reorder: the minimum distance keeps clicks (select/load) intact;
 	/// only the vertical translation matters, `RowInsertion` turns it into the
 	/// target gap, and `LibraryViewModel.move` commits on release.
 	private func reorderGesture(for index: Int, track: Track) -> some Gesture {
-		DragGesture(minimumDistance: 3)
+		DragGesture(minimumDistance: 2)
 			.onChanged { value in
 				if draggedIndex == nil {
 					draggedIndex = index
