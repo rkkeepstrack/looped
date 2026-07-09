@@ -151,8 +151,8 @@ private struct CompactSlider: View {
 
 // MARK: - Loop panel (bottom-right card)
 
-/// A/B loop points + reset, in their own card. The `«`/`»` nudge arrows are laid
-/// out here but disabled — they get wired to fine-adjust in Plan 5.
+/// A/B loop points + reset, in their own card. The `«`/`»` arrows nudge the set
+/// point by ±0.05 s; disabled while unset.
 private struct LoopPanel: View {
 	@EnvironmentObject var audioPlayer: PlayerViewModel
 
@@ -162,12 +162,16 @@ private struct LoopPanel: View {
 				.font(.caption.weight(.semibold))
 				.foregroundStyle(Theme.textSecondary)
 
-			loopRow(symbol: "a.circle", isSet: audioPlayer.loopStart.1 != nil) {
+			loopRow(symbol: "a.circle", isSet: audioPlayer.loopStart.1 != nil, set: {
 				audioPlayer.setLoopStart(time: audioPlayer.currentTime)
-			}
-			loopRow(symbol: "b.circle", isSet: audioPlayer.loopEnd.1 != nil) {
+			}, nudge: { delta in
+				audioPlayer.nudgeLoopStart(by: delta)
+			})
+			loopRow(symbol: "b.circle", isSet: audioPlayer.loopEnd.1 != nil, set: {
 				audioPlayer.setLoopEnd(time: audioPlayer.currentTime)
-			}
+			}, nudge: { delta in
+				audioPlayer.nudgeLoopEnd(by: delta)
+			})
 
 			Button("Reset Loop") {
 				audioPlayer.setLoopStart(time: nil)
@@ -181,11 +185,15 @@ private struct LoopPanel: View {
 		.overlay(RoundedRectangle(cornerRadius: Theme.panelCorner).stroke(Theme.panelBorder))
 	}
 
-	private func loopRow(symbol: String, isSet: Bool, set: @escaping () -> Void) -> some View {
+	/// Per-click nudge step for the chevron buttons.
+	private static let nudgeStep: TimeInterval = 0.05
+
+	private func loopRow(symbol: String, isSet: Bool, set: @escaping () -> Void, nudge: @escaping (TimeInterval) -> Void) -> some View {
 		HStack(spacing: 8) {
-			Button {} label: { Image(systemName: "chevron.backward.2") }
+			Button { nudge(-Self.nudgeStep) } label: { Image(systemName: "chevron.backward.2") }
 				.buttonStyle(.borderless)
-				.disabled(true) // nudge → Plan 5
+				.disabled(!isSet)
+				.help("Nudge earlier by 0.05 s")
 
 			Button(action: set) {
 				Image(systemName: isSet ? "\(symbol).fill" : symbol)
@@ -194,9 +202,10 @@ private struct LoopPanel: View {
 			.buttonStyle(.borderless)
 			.foregroundStyle(isSet ? Theme.accent : Theme.textPrimary)
 
-			Button {} label: { Image(systemName: "chevron.forward.2") }
+			Button { nudge(Self.nudgeStep) } label: { Image(systemName: "chevron.forward.2") }
 				.buttonStyle(.borderless)
-				.disabled(true) // nudge → Plan 5
+				.disabled(!isSet)
+				.help("Nudge later by 0.05 s")
 		}
 	}
 }

@@ -164,6 +164,69 @@ final class PlayerViewModelTests {
 		#expect(fake.clearLoopCount == 1)
 	}
 
+	// MARK: - Loop nudging
+
+	@Test func nudgeShiftsThePointAndRearms() async {
+		let vm = await loadedViewModel()
+		vm.setLoopStart(time: 0.2)
+		vm.setLoopEnd(time: 0.8)
+		#expect(fake.scheduleLoopCount == 1)
+
+		vm.nudgeLoopStart(by: 0.05)
+		#expect(abs((vm.loopStart.0 ?? -1) - 0.25) <= 1e-9)
+		#expect(fake.scheduleLoopCount == 2)
+
+		vm.nudgeLoopEnd(by: -0.1)
+		#expect(abs((vm.loopEnd.0 ?? -1) - 0.7) <= 1e-9)
+		#expect(fake.scheduleLoopCount == 3)
+	}
+
+	@Test func nudgeClampsToFileBounds() async {
+		let vm = await loadedViewModel()
+		vm.setLoopStart(time: 0.02)
+		vm.setLoopEnd(time: 0.9)
+
+		vm.nudgeLoopStart(by: -0.5)
+		#expect(vm.loopStart.0 == 0)
+
+		vm.nudgeLoopEnd(by: 5)
+		#expect(abs((vm.loopEnd.0 ?? -1) - (vm.duration ?? -1)) <= 1e-9)
+	}
+
+	@Test func nudgeKeepsTheMinimumGap() async throws {
+		let vm = await loadedViewModel()
+		vm.setLoopStart(time: 0.4)
+		vm.setLoopEnd(time: 0.5)
+
+		vm.nudgeLoopStart(by: 0.5) // would cross B
+		#expect(abs((vm.loopStart.0 ?? -1) - (0.5 - PlayerViewModel.minLoopGap)) <= 1e-9)
+
+		vm.nudgeLoopEnd(by: -0.5) // would cross A
+		#expect(try abs((vm.loopEnd.0 ?? -1) - (#require(vm.loopStart.0) + PlayerViewModel.minLoopGap)) <= 1e-9)
+		#expect(fake.isLooping) // still a valid range, still armed
+	}
+
+	@Test func nudgeIsANoOpWhenThePointIsUnset() async {
+		let vm = await loadedViewModel()
+		vm.nudgeLoopStart(by: 0.05)
+		vm.nudgeLoopEnd(by: 0.05)
+		#expect(vm.loopStart.0 == nil)
+		#expect(vm.loopEnd.0 == nil)
+		#expect(fake.scheduleLoopCount == 0)
+	}
+
+	@Test func nudgeClampsAgainstTheOnlySetBoundUsingTheFile() async {
+		let vm = await loadedViewModel()
+		vm.setLoopStart(time: 0.9) // B unset → upper bound is the file end
+		vm.nudgeLoopStart(by: 5)
+		#expect(abs((vm.loopStart.0 ?? -1) - (vm.duration ?? -1)) <= 1e-9)
+
+		vm.setLoopStart(time: nil)
+		vm.setLoopEnd(time: 0.1) // A unset → lower bound is 0
+		vm.nudgeLoopEnd(by: -5)
+		#expect(vm.loopEnd.0 == 0)
+	}
+
 	// MARK: - Parameters
 
 	@Test func rateAndVolumeReachThePlayer() async {

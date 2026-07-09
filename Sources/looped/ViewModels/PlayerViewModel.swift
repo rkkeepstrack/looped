@@ -171,6 +171,28 @@ final class PlayerViewModel: ObservableObject {
 		refreshLoop()
 	}
 
+	/// Smallest allowed A–B gap. The crossfade self-limits below this, but a
+	/// sub-perceptual loop is useless — keep nudges from collapsing the range.
+	static let minLoopGap: TimeInterval = 0.05
+
+	/// Shift the A point by `delta`, clamped to `[0, B − minLoopGap]` (or the file
+	/// end when B is unset). No-op when A isn't set. Re-arms via `setLoopStart`,
+	/// which reschedules from scratch — playback restarts at A (smooth keep-position
+	/// nudging would need `scheduleLoop` to take a start offset; out of scope).
+	func nudgeLoopStart(by delta: TimeInterval) {
+		guard let time = loopStart.0, let duration else { return }
+		let upper = loopEnd.0.map { $0 - Self.minLoopGap } ?? duration
+		setLoopStart(time: min(max(0, time + delta), max(0, upper)))
+	}
+
+	/// Shift the B point by `delta`, clamped to `[A + minLoopGap, duration]`
+	/// (lower bound 0 when A is unset). No-op when B isn't set.
+	func nudgeLoopEnd(by delta: TimeInterval) {
+		guard let time = loopEnd.0, let duration else { return }
+		let lower = loopStart.0.map { $0 + Self.minLoopGap } ?? 0
+		setLoopEnd(time: max(min(duration, time + delta), min(duration, lower)))
+	}
+
 	private func framePosition(for time: TimeInterval?) -> AVAudioFramePosition? {
 		guard let loaded, let time else { return nil }
 		return AVAudioFramePosition(time * loaded.format.sampleRate)
