@@ -209,6 +209,10 @@ private struct Sidebar: View {
 				of: [.fileURL],
 				delegate: TrackListDropDelegate(library: library, gapIndex: $externalGapIndex)
 			)
+			// Outside the overlay + drop handler so gap coordinates are
+			// unaffected; gives the gap-0 insertion indicator (which centers on
+			// the content's top edge) room to render without clipping.
+			.padding(.top, 4)
 		}
 	}
 
@@ -282,9 +286,7 @@ private struct Sidebar: View {
 			}
 			.padding(.horizontal, 3)
 			.frame(height: 5)
-			// Centered on the gap, but clamped inside the content — at gap 0
-			// the scroll container would otherwise clip the indicator's top half.
-			.offset(y: max(0, CGFloat(gap) * Theme.trackRowHeight - 2.5))
+			.offset(y: CGFloat(gap) * Theme.trackRowHeight - 2.5)
 			.allowsHitTesting(false)
 		}
 	}
