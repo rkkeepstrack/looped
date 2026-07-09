@@ -57,50 +57,61 @@ struct LibraryViewModelTests {
 		#expect(library.tracks.map(\.url) == [wav])
 	}
 
-	// MARK: - play
+	// MARK: - load
 
-	@Test func playLoadsTrackSetsCurrentAndStartsPlayback() async throws {
+	@Test func loadSetsCurrentTrackWithoutStartingPlayback() async throws {
 		let (library, player, playback) = makeSUT()
 		let url = try AudioFixture.tempSine(seconds: 1)
 		await library.add(urls: [url])
 		let track = try #require(library.tracks.first)
 
-		await library.play(track)
+		await library.load(track)
 
 		#expect(library.currentTrackID == track.id)
 		#expect(player.audioURL == url)
-		#expect(player.isPlaying)
+		#expect(!player.isPlaying)
 		#expect(playback.setSourceCount == 1)
-		#expect(playback.playCount == 1)
+		#expect(playback.playCount == 0)
 	}
 
-	@Test func overlappingPlayRequestsAreDroppedNotInterleaved() async throws {
+	@Test func overlappingLoadRequestsAreDroppedNotInterleaved() async throws {
 		// A double-click fires two row taps; the second must be dropped while the
-		// first load is in flight (interleaved setSource/play crashed the engine).
+		// first load is in flight (interleaved setSource calls crashed the engine).
 		let (library, _, playback) = makeSUT(files: SlowAudioFileService(delay: .milliseconds(80)))
 		let url = try AudioFixture.tempSine(seconds: 1)
 		await library.add(urls: [url])
 		let track = try #require(library.tracks.first)
 
-		let first = Task { await library.play(track) }
+		let first = Task { await library.load(track) }
 		try await Task.sleep(for: .milliseconds(20))
-		let second = Task { await library.play(track) }
+		let second = Task { await library.load(track) }
 		await first.value
 		await second.value
 
 		#expect(playback.setSourceCount == 1)
-		#expect(playback.playCount == 1)
 		#expect(library.currentTrackID == track.id)
 	}
 
-	@Test func playFailedLoadKeepsCurrentTrackUnset() async throws {
-		let (library, player, playback) = makeSUT(files: TooLongAudioFileService())
+	@Test func failedLoadKeepsCurrentTrackUnset() async throws {
+		let (library, player, _) = makeSUT(files: TooLongAudioFileService())
 		let track = try Track(id: UUID(), url: AudioFixture.tempSine(seconds: 1), title: "t", duration: 1)
 
-		await library.play(track)
+		await library.load(track)
 
 		#expect(library.currentTrackID == nil)
 		#expect(player.loadError != nil)
-		#expect(playback.playCount == 0)
+	}
+
+	@Test func loadPublishesTheLoadingFlagWhileInFlight() async throws {
+		let (library, player, _) = makeSUT(files: SlowAudioFileService(delay: .milliseconds(80)))
+		let url = try AudioFixture.tempSine(seconds: 1)
+		await library.add(urls: [url])
+		let track = try #require(library.tracks.first)
+
+		let load = Task { await library.load(track) }
+		try await Task.sleep(for: .milliseconds(20))
+		#expect(player.isLoadingTrack)
+		await load.value
+		#expect(!player.isLoadingTrack)
 	}
 }

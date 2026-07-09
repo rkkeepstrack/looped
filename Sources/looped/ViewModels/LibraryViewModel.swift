@@ -36,7 +36,7 @@ final class LibraryViewModel: ObservableObject {
 	// MARK: - Import
 
 	/// Multi-select open panel → `add(urls:)`. If the library was empty,
-	/// auto-play the first added track.
+	/// auto-load the first added track (into the waveform; playback stays paused).
 	func openFiles() async {
 		let urls: [URL] = await MainActor.run {
 			let panel = NSOpenPanel()
@@ -49,7 +49,7 @@ final class LibraryViewModel: ObservableObject {
 		let wasEmpty = await MainActor.run { tracks.isEmpty }
 		await add(urls: urls)
 		if wasEmpty, let first = await MainActor.run(body: { tracks.first }) {
-			await play(first)
+			await load(first)
 		}
 	}
 
@@ -73,9 +73,10 @@ final class LibraryViewModel: ObservableObject {
 
 	// MARK: - Playback bridge
 
-	/// Load + start the track; marks it current only if the load succeeded
-	/// (e.g. a >20-min file keeps the previous selection and shows loadError).
-	func play(_ track: Track) async {
+	/// Load the track into the player/waveform (no autoplay — the transport
+	/// starts playback); marks it current only if the load succeeded (e.g. a
+	/// >20-min file keeps the previous selection and shows loadError).
+	func load(_ track: Track) async {
 		let alreadyInFlight = await MainActor.run { () -> Bool in
 			if playInFlight { return true }
 			playInFlight = true
@@ -88,9 +89,6 @@ final class LibraryViewModel: ObservableObject {
 			playInFlight = false
 			guard player.loadError == nil else { return }
 			currentTrackID = track.id
-			if !player.isPlaying {
-				player.togglePlayPause()
-			}
 		}
 	}
 

@@ -64,7 +64,7 @@ be mocked.
 - **`PlayerViewModel`** (`ViewModels/PlayerViewModel.swift`) — the playback presentation layer.
   Holds the `@Published` state the views bind to (`isPlaying`, `currentTime`, `duration`, `rate`, `pitchSemitones`, `syncPitchAndRate`,
   `loopStart`/`loopEnd` `(TimeInterval?, AVAudioFramePosition?)` tuples, `currentFileName`,
-  `audioURL`), owns the 0.03s refresh `Timer` (installed in `.common` run-loop modes so the
+  `audioURL`, `isLoadingTrack` — true while a decode is in flight, shown as a spinner over the waveform), owns the 0.03s refresh `Timer` (installed in `.common` run-loop modes so the
   waveform keeps updating during AppKit event tracking), and turns view intents
   (`openFile`, `togglePlayPause`, `stop`, `jumpTo`, `setLoopStart/End`, `updateRate/Pitch/Sync/Volume`) into
   calls on the injected services. Also exposes `livePlaybackTime()`, an uncached read of the
@@ -76,9 +76,10 @@ be mocked.
   (`openFiles()`; import is library UI, not playback; auto-plays the first track when the library
   was empty), and `add(urls:)` — the single intake path (dedupe by `standardizedFileURL`, filter
   to audio UTTypes, title/duration via `AVURLAsset` metadata — no full decode per add).
-  `play(_ track:)` bridges to the constructor-injected `PlayerViewModel` (`load(url:)` + start;
-  the 20-min limit / `loadError` applies per play) and sets `currentTrackID` only on a successful
-  load; overlapping play requests (double-click = two taps) are dropped while one load is in
+  `load(_ track:)` bridges to the constructor-injected `PlayerViewModel.load(url:)` (no autoplay —
+  the transport starts playback; the 20-min limit / `loadError` applies per load) and sets
+  `currentTrackID` only on a successful
+  load; overlapping load requests (double-click = two taps) are dropped while one load is in
   flight. The VM→VM reference is deliberate — it's the library↔playback bridge; services stay clean.
 - **`WaveformViewModel`** (`ViewModels/WaveformViewModel.swift`) — observable state + gestures for
   the waveform (was `OffsetCalculator`). Holds `@Published` `samples` / `waveformWidth` /
@@ -137,7 +138,7 @@ duration. `Track` (`Models/Track.swift`) — library entry: id, url, title, opti
 | `Sources/looped/ViewModels/PlayerViewModel.swift` | Playback state/intents/timer; drives the services (see Architecture). |
 | `Sources/looped/ViewModels/LibraryViewModel.swift` | Track library: multi-select import panel, `add(urls:)` intake (dedupe/filter/metadata), row-tap → play via `PlayerViewModel`. |
 | `Sources/looped/ViewModels/WaveformViewModel.swift` | Waveform observable state + scrubbing/snap-back (was `OffsetCalculator`); delegates windowing/analysis to `WaveformService`. |
-| `Sources/looped/Views/ContentView.swift` | Root layout: animated collapsible **`Sidebar`** (private; import button + track list — `TrackRow`s with title/duration, current row in `Theme.accent`, single click selects (visual only), double-click → `LibraryViewModel.play`; width user-resizable by dragging the divider, clamped to `Theme.sidebarMinWidth…MaxWidth`, persisted via `@AppStorage "sidebarWidth"`) + a top-left toggle (`@AppStorage "sidebarOpen"`) + centered header (name + `currentTime | fileTime`) + waveform + bottom bar; hosts `KeyboardHandler`. |
+| `Sources/looped/Views/ContentView.swift` | Root layout: animated collapsible **`Sidebar`** (private; import button + track list — `TrackRow`s with title/duration, current row in `Theme.accent`, single click selects instantly (visual only), double-click → `LibraryViewModel.load` (no autoplay); width user-resizable by dragging the divider, clamped to `Theme.sidebarMinWidth…MaxWidth`, persisted via `@AppStorage "sidebarWidth"`) + a top-left toggle (`@AppStorage "sidebarOpen"`) + centered header (name + `currentTime | fileTime`) + waveform + bottom bar; hosts `KeyboardHandler`. |
 | `Sources/looped/Views/ControlsView.swift` | The bottom bar: Volume + Rate (log ~0.5×–2×, labeled "Speed" when synced) + Pitch (±12 semitones) `CompactSlider`s and a "Sync pitch & rate" checkbox (varispeed mode: one slider = tempo+pitch together, pitch slider disabled showing the implied shift) bottom-left, play/pause + stop center, `LoopPanel` (A/B + Reset, `«`/`»` arrows nudge a set point ±0.05 s, disabled while unset; nudging re-arms via `PlayerViewModel.nudgeLoopStart/End(by:)`, clamped to the file bounds and a `minLoopGap` of 0.05 s) bottom-right; sliders show the formatted current value in place of their label while dragging; clicking a slider's label (shows "Reset" on hover) resets it to its default (100 % / 1.0× / 0 st). `CompactSlider`/`LoopPanel` are private. |
 | `Sources/looped/Views/WaveformView.swift` | **`WaveformDisplayView`** — windowed render: two viewport-sized `SyncWaveformCanvas` layers (gray upcoming + orange played, masked to the playhead) fed the visible sample slice from `WaveformViewModel`, plus a light-blue scrub-highlight layer (`Theme.waveformScrub`, masked between the played edge and the scrub cursor while scrubbing), A/B markers + shaded loop region (`.position`) and the center iterator; drives scroll via `ScrollObserverView`; while playing, a `TimelineView(.animation)` re-evaluates the window per display frame (the 0.03s timer only feeds labels) via `PlayerViewModel.livePlaybackTime()`, so the pan tracks the display clock. `SyncWaveformCanvas` (private) is a `WaveformLiveCanvas` clone that draws **synchronously** (`Canvas(rendersAsynchronously: false)`, same `WaveformImageDrawer` call) so the per-tick reslice and its compensating `.offset` commit in one pass — the library's async canvas lagged a frame and made the seam flicker. |
 | `Sources/looped/Views/Theme.swift` | Shared design tokens (`enum Theme`): warm-orange-on-black palette, waveform colors, and layout metrics (sidebar width, panel corner/border). |

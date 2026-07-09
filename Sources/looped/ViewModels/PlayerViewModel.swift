@@ -32,6 +32,8 @@ final class PlayerViewModel: ObservableObject {
 	@Published var audioURL: URL?
 	/// Non-nil when the last load failed (e.g. file too long); shown in the header.
 	@Published var loadError: String?
+	/// True while a file decode is in flight — the waveform shows a spinner.
+	@Published var isLoadingTrack = false
 
 	// MARK: Injected services
 
@@ -62,15 +64,20 @@ final class PlayerViewModel: ObservableObject {
 	}
 
 	func load(url: URL) async {
+		await MainActor.run { self.isLoadingTrack = true }
 		do {
 			let loaded = try await files.load(url: url)
 			await MainActor.run {
 				self.loadError = nil
 				self.apply(loaded)
+				self.isLoadingTrack = false
 			}
 		} catch {
 			let message = (error as? LocalizedError)?.errorDescription ?? "Could not load file."
-			await MainActor.run { self.loadError = message }
+			await MainActor.run {
+				self.loadError = message
+				self.isLoadingTrack = false
+			}
 		}
 	}
 

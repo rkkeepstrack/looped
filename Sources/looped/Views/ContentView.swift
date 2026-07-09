@@ -149,16 +149,13 @@ private struct Sidebar: View {
 								isCurrent: track.id == library.currentTrackID,
 								isSelected: track.id == selectedTrackID
 							)
-							// Double-click loads + plays; a single click only
-							// selects. `exclusively` keeps the single-tap from
-							// firing on the first click of a double.
-							.gesture(
+							// Single click selects instantly (also on the first
+							// click of a double); the simultaneous double-click
+							// loads the track into the waveform.
+							.onTapGesture { selectedTrackID = track.id }
+							.simultaneousGesture(
 								TapGesture(count: 2)
-									.onEnded { Task { await library.play(track) } }
-									.exclusively(
-										before: TapGesture()
-											.onEnded { selectedTrackID = track.id }
-									)
+									.onEnded { Task { await library.load(track) } }
 							)
 						}
 					}
