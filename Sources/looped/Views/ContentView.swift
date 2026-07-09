@@ -11,14 +11,17 @@ struct ContentView: View {
 	@EnvironmentObject var audioPlayer: PlayerViewModel
 	@EnvironmentObject var offsetCalculator: WaveformViewModel
 	@AppStorage("sidebarOpen") private var sidebarOpen = true
+	@AppStorage("sidebarWidth") private var sidebarWidth = Double(Theme.sidebarWidth)
+	/// Width latched at drag start, so the resize tracks the cursor without drift.
+	@State private var sidebarDragStartWidth: Double?
 
 	var body: some View {
 		HStack(spacing: 0) {
 			if sidebarOpen {
 				Sidebar()
-					.frame(width: Theme.sidebarWidth)
+					.frame(width: clampedSidebarWidth)
 					.transition(.move(edge: .leading))
-				Divider()
+				sidebarResizeHandle
 			}
 			mainColumn
 		}
@@ -42,6 +45,39 @@ struct ContentView: View {
 		}
 		// Keyboard shortcuts (spacebar → play/pause)
 		.background(KeyboardHandler(audioPlayer: audioPlayer))
+	}
+
+	// MARK: Sidebar resize
+
+	private var clampedSidebarWidth: CGFloat {
+		CGFloat(min(max(sidebarWidth, Double(Theme.sidebarMinWidth)), Double(Theme.sidebarMaxWidth)))
+	}
+
+	/// The sidebar/main divider, widened into a grabbable resize handle.
+	private var sidebarResizeHandle: some View {
+		Divider()
+			// A hairline is impossible to grab — pad the hit area without
+			// visually widening the divider.
+			.contentShape(Rectangle().inset(by: -4))
+			.onHover { inside in
+				if inside {
+					NSCursor.resizeLeftRight.push()
+				} else {
+					NSCursor.pop()
+				}
+			}
+			.gesture(
+				DragGesture(minimumDistance: 1, coordinateSpace: .global)
+					.onChanged { value in
+						let start = sidebarDragStartWidth ?? sidebarWidth
+						sidebarDragStartWidth = start
+						sidebarWidth = min(
+							max(start + value.translation.width, Double(Theme.sidebarMinWidth)),
+							Double(Theme.sidebarMaxWidth)
+						)
+					}
+					.onEnded { _ in sidebarDragStartWidth = nil }
+			)
 	}
 
 	// MARK: Main column
