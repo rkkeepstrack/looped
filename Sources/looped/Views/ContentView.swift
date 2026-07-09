@@ -267,14 +267,25 @@ private struct Sidebar: View {
 			}
 	}
 
-	/// The themed insertion line: a 2pt rule at the active gap.
+	/// The themed insertion line at the active gap: a 1pt hairline with a small
+	/// hollow dot at its leading end (the shape of the native macOS drop
+	/// indicator), centered on the gap.
 	@ViewBuilder private var insertionLine: some View {
 		if let gap = activeGapIndex {
-			Rectangle()
-				.fill(Theme.insertionLine)
-				.frame(height: 2)
-				.offset(y: CGFloat(gap) * Theme.trackRowHeight - 1)
-				.allowsHitTesting(false)
+			HStack(spacing: 2) {
+				Circle()
+					.strokeBorder(Theme.insertionLine, lineWidth: 1)
+					.frame(width: 5, height: 5)
+				Capsule()
+					.fill(Theme.insertionLine)
+					.frame(height: 1)
+			}
+			.padding(.horizontal, 3)
+			.frame(height: 5)
+			// Centered on the gap, but clamped inside the content — at gap 0
+			// the scroll container would otherwise clip the indicator's top half.
+			.offset(y: max(0, CGFloat(gap) * Theme.trackRowHeight - 2.5))
+			.allowsHitTesting(false)
 		}
 	}
 
