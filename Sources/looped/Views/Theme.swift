@@ -45,6 +45,9 @@ enum Theme {
 	static let sidebarWidth: CGFloat = 220
 	static let sidebarMinWidth: CGFloat = 160
 	static let sidebarMaxWidth: CGFloat = 420
+	/// Fixed sidebar track-row height — uniform rows keep the hand-rolled
+	/// reorder/drop index math trivial (`RowInsertion`).
+	static let trackRowHeight: CGFloat = 28
 	static let panelCorner: CGFloat = 12
 	static let panelBorder = Color.white.opacity(0.08)
 

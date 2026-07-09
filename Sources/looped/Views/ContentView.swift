@@ -146,13 +146,25 @@ struct ContentView: View {
 
 /// Collapsible left panel: the import button + the track library list. The
 /// list is the "library" drop zone: external file/folder drops and internal
-/// reorder drags both show the List's native insertion line at the drop point.
+/// reorder drags both show a themed insertion line at the drop point.
+///
+/// The list is hand-rolled (plain VStack + our own drag/drop) rather than a
+/// native List: the NSTableView under a List paints its selection highlight
+/// and drop indicator in the system accent with no public recolor API, which
+/// clashed with the theme. Owning the ~150 lines keeps every pixel themeable —
+/// the standard trade for custom-look audio apps. Cost: no keyboard list
+/// navigation, no auto-scroll while dragging (fine at library scale).
 private struct Sidebar: View {
 	@EnvironmentObject var library: LibraryViewModel
 	/// Row picked by a single click — purely visual until a double-click plays it.
 	@State private var selectedTrackID: UUID?
 	/// A file drag is hovering the empty-library drop zone.
 	@State private var emptyDropTargeted = false
+	/// Row index being drag-reordered, and its live vertical translation.
+	@State private var draggedIndex: Int?
+	@State private var dragTranslation: CGFloat = 0
+	/// Insertion gap while an external file drag hovers the list.
+	@State private var externalGapIndex: Int?
 
 	var body: some View {
 		VStack(alignment: .leading, spacing: 14) {
@@ -179,57 +191,105 @@ private struct Sidebar: View {
 		.background(Theme.surface)
 	}
 
-	/// A themed plain List rather than a LazyVStack: List provides native
-	/// drag-reorder (`onMove`) and external-drop insertion (`onInsert`), both
-	/// drawing the standard insertion line between rows / below the last row.
 	private var trackList: some View {
-		// Native selection binding (not a tap gesture): single click selects via
-		// the List itself, which keeps row drags (onMove reordering) working —
-		// SwiftUI tap gestures on the row claim the mouse-down and the
-		// NSTableView-backed drag never starts.
-		List(selection: $selectedTrackID) {
-			ForEach(library.tracks) { track in
-				TrackRow(
-					track: track,
-					isCurrent: track.id == library.currentTrackID,
-					isSelected: track.id == selectedTrackID
-				)
-				.tag(track.id)
-				.listRowSeparator(.hidden)
-				// Zero insets: the row's opaque background must cover the whole
-				// cell so the List's native (system-blue) selection highlight
-				// never shows through — the theme draws its own.
-				.listRowInsets(EdgeInsets())
-			}
-			.onMove { source, destination in
-				library.move(fromOffsets: source, toOffset: destination)
-			}
-			.onInsert(of: [.fileURL]) { index, providers in
-				Task {
-					let urls = await LibraryViewModel.urls(from: providers)
-					await library.addDropped(urls: urls, at: index)
+		ScrollView {
+			// A plain (non-lazy) VStack: rows must exist for zIndex to lift
+			// the dragged one, and the library is small.
+			VStack(spacing: 0) {
+				ForEach(Array(library.tracks.enumerated()), id: \.element.id) { index, track in
+					trackRow(track, at: index)
 				}
+				// Tail area so a drop can land below the last row (gap = count).
+				Color.clear.frame(height: Theme.trackRowHeight * 2)
 			}
+			.overlay(alignment: .top) { insertionLine }
+			// Attached to the content (not the ScrollView), so DropInfo.location
+			// stays in row coordinates even when scrolled.
+			.onDrop(
+				of: [.fileURL],
+				delegate: TrackListDropDelegate(library: library, gapIndex: $externalGapIndex)
+			)
 		}
-		// Native double-click: primaryAction fires on row double-click (no
-		// context menu — the builder is empty). No gesture on the rows, so
-		// nothing intercepts the mouse-down and row drags start anywhere on
-		// the row, not just its edges.
-		.contextMenu(forSelectionType: UUID.self) { _ in } primaryAction: { ids in
-			guard let id = ids.first,
-			      let track = library.tracks.first(where: { $0.id == id })
-			else { return }
-			Task { await library.load(track) }
-		}
-		.listStyle(.plain)
-		.scrollContentBackground(.hidden)
-		// Cancel the List's built-in content inset so rows align with the
-		// import button above.
-		.padding(.horizontal, -10)
 	}
 
-	/// Empty-library state doubling as the drop target (the List handles drops
-	/// once rows exist).
+	private func trackRow(_ track: Track, at index: Int) -> some View {
+		TrackRow(
+			track: track,
+			isCurrent: track.id == library.currentTrackID,
+			isSelected: track.id == selectedTrackID
+		)
+		.frame(height: Theme.trackRowHeight)
+		// The dragged row follows the cursor, floats above its siblings, and
+		// dims slightly so it reads as picked up.
+		.offset(y: index == draggedIndex ? dragTranslation : 0)
+		.zIndex(index == draggedIndex ? 1 : 0)
+		.opacity(index == draggedIndex ? 0.8 : 1)
+		// Single click selects instantly (also the first click of a double);
+		// the simultaneous double-click loads the track into the waveform.
+		.onTapGesture { selectedTrackID = track.id }
+		.simultaneousGesture(
+			TapGesture(count: 2)
+				.onEnded { Task { await library.load(track) } }
+		)
+		.gesture(reorderGesture(for: index, track: track))
+	}
+
+	/// Drag-to-reorder: the minimum distance keeps clicks (select/load) intact;
+	/// only the vertical translation matters, `RowInsertion` turns it into the
+	/// target gap, and `LibraryViewModel.move` commits on release.
+	private func reorderGesture(for index: Int, track: Track) -> some Gesture {
+		DragGesture(minimumDistance: 3)
+			.onChanged { value in
+				if draggedIndex == nil {
+					draggedIndex = index
+					selectedTrackID = track.id
+				}
+				dragTranslation = value.translation.height
+			}
+			.onEnded { value in
+				defer {
+					draggedIndex = nil
+					dragTranslation = 0
+				}
+				guard let from = draggedIndex else { return }
+				let gap = RowInsertion.dragGapIndex(
+					from: from,
+					translation: value.translation.height,
+					rowHeight: Theme.trackRowHeight,
+					count: library.tracks.count
+				)
+				guard gap != from, gap != from + 1 else { return }
+				library.move(fromOffsets: IndexSet(integer: from), toOffset: gap)
+			}
+	}
+
+	/// The themed insertion line: a 2pt accent rule at the active gap.
+	@ViewBuilder private var insertionLine: some View {
+		if let gap = activeGapIndex {
+			Rectangle()
+				.fill(Theme.accent)
+				.frame(height: 2)
+				.offset(y: CGFloat(gap) * Theme.trackRowHeight - 1)
+				.allowsHitTesting(false)
+		}
+	}
+
+	/// The gap to draw the line at: an external file drag, or an internal
+	/// reorder drag pointing somewhere other than the row's own slot.
+	private var activeGapIndex: Int? {
+		if let external = externalGapIndex { return external }
+		guard let from = draggedIndex else { return nil }
+		let gap = RowInsertion.dragGapIndex(
+			from: from,
+			translation: dragTranslation,
+			rowHeight: Theme.trackRowHeight,
+			count: library.tracks.count
+		)
+		return (gap == from || gap == from + 1) ? nil : gap
+	}
+
+	/// Empty-library state doubling as the drop target (the track list handles
+	/// drops once rows exist).
 	private var emptyDropZone: some View {
 		Text("Drop audio files or folders here")
 			.font(.caption)
@@ -254,9 +314,7 @@ private struct Sidebar: View {
 }
 
 /// One library row: title + duration; the current track reads in accent orange,
-/// the (single-click) selected row gets a lighter background. The background's
-/// bottom layer is opaque `Theme.surface`, hiding the List's native system-blue
-/// selection highlight so the themed fill is the only selection visual.
+/// the (single-click) selected row gets a lighter background.
 private struct TrackRow: View {
 	let track: Track
 	let isCurrent: Bool
@@ -283,20 +341,48 @@ private struct TrackRow: View {
 		.padding(.vertical, 5)
 		.frame(maxWidth: .infinity, alignment: .leading)
 		.background(
-			ZStack {
-				// Opaque mask over the native (system-blue) selection highlight.
-				// Overdrawn horizontally: the NSTableView cell keeps its own side
-				// insets beyond the zeroed listRowInsets, and the highlight spans
-				// the full row — without the overdraw it peeks out at the edges.
-				Rectangle()
-					.fill(Theme.surface)
-					.padding(.horizontal, -16)
-				RoundedRectangle(cornerRadius: 6)
-					.fill(isSelected ? Color.white.opacity(0.12) : hovering ? Color.white.opacity(0.06) : Color.clear)
-					.padding(.vertical, 1)
-			}
+			RoundedRectangle(cornerRadius: 6)
+				.fill(isSelected ? Color.white.opacity(0.12) : hovering ? Color.white.opacity(0.06) : Color.clear)
+				.padding(.vertical, 1)
 		)
 		.contentShape(Rectangle())
 		.onHover { hovering = $0 }
+	}
+}
+
+/// External-file drops on the track list: tracks the insertion gap under the
+/// cursor while a drag hovers (drives the themed line) and inserts there on
+/// drop via `LibraryViewModel.addDropped(urls:at:)`.
+private struct TrackListDropDelegate: DropDelegate {
+	let library: LibraryViewModel
+	@Binding var gapIndex: Int?
+
+	func validateDrop(info: DropInfo) -> Bool {
+		info.hasItemsConforming(to: [.fileURL])
+	}
+
+	func dropUpdated(info: DropInfo) -> DropProposal? {
+		gapIndex = RowInsertion.gapIndex(
+			y: info.location.y,
+			rowHeight: Theme.trackRowHeight,
+			count: library.tracks.count
+		)
+		return DropProposal(operation: .copy)
+	}
+
+	func dropExited(info _: DropInfo) {
+		gapIndex = nil
+	}
+
+	func performDrop(info: DropInfo) -> Bool {
+		let providers = info.itemProviders(for: [.fileURL])
+		guard !providers.isEmpty else { return false }
+		let index = gapIndex
+		gapIndex = nil
+		Task {
+			let urls = await LibraryViewModel.urls(from: providers)
+			await library.addDropped(urls: urls, at: index)
+		}
+		return true
 	}
 }
