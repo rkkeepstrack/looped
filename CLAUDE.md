@@ -78,7 +78,8 @@ be mocked.
   to audio UTTypes, title/duration via `AVURLAsset` metadata — no full decode per add).
   `play(_ track:)` bridges to the constructor-injected `PlayerViewModel` (`load(url:)` + start;
   the 20-min limit / `loadError` applies per play) and sets `currentTrackID` only on a successful
-  load. The VM→VM reference is deliberate — it's the library↔playback bridge; services stay clean.
+  load; overlapping play requests (double-click = two taps) are dropped while one load is in
+  flight. The VM→VM reference is deliberate — it's the library↔playback bridge; services stay clean.
 - **`WaveformViewModel`** (`ViewModels/WaveformViewModel.swift`) — observable state + gestures for
   the waveform (was `OffsetCalculator`). Holds `@Published` `samples` / `waveformWidth` /
   `isScrolling` / `currentScrollOffset`, owns scrubbing + the snap-back animation
@@ -102,7 +103,8 @@ be mocked.
   frames — it sits upstream of both effect units — which are consumed at the
   `timePitch.rate × varispeed.rate` product; the wall-clock smoothing uses that product,
   no division back to source time). `setSource(file:format:)` reconnects the graph at the file's sample rate so the raw
-  `.loops` buffer plays at the correct pitch.
+  `.loops` buffer plays at the correct pitch — stopping/restarting the engine around the rewire
+  (reconnecting a running engine races the render thread and crashes on the second track).
 - **`AudioFileService`** / `DefaultAudioFileService` (`Services/AudioFileService.swift`) — decodes
   a URL into a `LoadedAudio` (`async`, off-main); URL-based and UI-free (the open panel lives in
   the view-model), so drag-and-drop can reuse it later. Rejects tracks longer than
@@ -135,7 +137,7 @@ duration. `Track` (`Models/Track.swift`) — library entry: id, url, title, opti
 | `Sources/looped/ViewModels/PlayerViewModel.swift` | Playback state/intents/timer; drives the services (see Architecture). |
 | `Sources/looped/ViewModels/LibraryViewModel.swift` | Track library: multi-select import panel, `add(urls:)` intake (dedupe/filter/metadata), row-tap → play via `PlayerViewModel`. |
 | `Sources/looped/ViewModels/WaveformViewModel.swift` | Waveform observable state + scrubbing/snap-back (was `OffsetCalculator`); delegates windowing/analysis to `WaveformService`. |
-| `Sources/looped/Views/ContentView.swift` | Root layout: animated collapsible **`Sidebar`** (private; import button + track list — `TrackRow`s with title/duration, current row in `Theme.accent`, tap → `LibraryViewModel.play`) + a top-left toggle (`@AppStorage "sidebarOpen"`) + centered header (name + `currentTime | fileTime`) + waveform + bottom bar; hosts `KeyboardHandler`. |
+| `Sources/looped/Views/ContentView.swift` | Root layout: animated collapsible **`Sidebar`** (private; import button + track list — `TrackRow`s with title/duration, current row in `Theme.accent`, tap → `LibraryViewModel.play`; width user-resizable by dragging the divider, clamped to `Theme.sidebarMinWidth…MaxWidth`, persisted via `@AppStorage "sidebarWidth"`) + a top-left toggle (`@AppStorage "sidebarOpen"`) + centered header (name + `currentTime | fileTime`) + waveform + bottom bar; hosts `KeyboardHandler`. |
 | `Sources/looped/Views/ControlsView.swift` | The bottom bar: Volume + Rate (log ~0.5×–2×, labeled "Speed" when synced) + Pitch (±12 semitones) `CompactSlider`s and a "Sync pitch & rate" checkbox (varispeed mode: one slider = tempo+pitch together, pitch slider disabled showing the implied shift) bottom-left, play/pause + stop center, `LoopPanel` (A/B + Reset, `«`/`»` arrows nudge a set point ±0.05 s, disabled while unset; nudging re-arms via `PlayerViewModel.nudgeLoopStart/End(by:)`, clamped to the file bounds and a `minLoopGap` of 0.05 s) bottom-right; sliders show the formatted current value in place of their label while dragging; clicking a slider's label (shows "Reset" on hover) resets it to its default (100 % / 1.0× / 0 st). `CompactSlider`/`LoopPanel` are private. |
 | `Sources/looped/Views/WaveformView.swift` | **`WaveformDisplayView`** — windowed render: two viewport-sized `SyncWaveformCanvas` layers (gray upcoming + orange played, masked to the playhead) fed the visible sample slice from `WaveformViewModel`, plus a light-blue scrub-highlight layer (`Theme.waveformScrub`, masked between the played edge and the scrub cursor while scrubbing), A/B markers + shaded loop region (`.position`) and the center iterator; drives scroll via `ScrollObserverView`; while playing, a `TimelineView(.animation)` re-evaluates the window per display frame (the 0.03s timer only feeds labels) via `PlayerViewModel.livePlaybackTime()`, so the pan tracks the display clock. `SyncWaveformCanvas` (private) is a `WaveformLiveCanvas` clone that draws **synchronously** (`Canvas(rendersAsynchronously: false)`, same `WaveformImageDrawer` call) so the per-tick reslice and its compensating `.offset` commit in one pass — the library's async canvas lagged a frame and made the seam flicker. |
 | `Sources/looped/Views/Theme.swift` | Shared design tokens (`enum Theme`): warm-orange-on-black palette, waveform colors, and layout metrics (sidebar width, panel corner/border). |
@@ -173,7 +175,8 @@ _View-models_ (behavior, via injected test doubles — automates most of the TES
   fixtures) + the play bridge (`currentTrackID`, spy player, failed-load path).
 - `Tests/loopedTests/ViewModels/WaveformViewModelTests.swift` — scrubbing state + window delegation.
 - `Tests/loopedTests/Support/TestDoubles.swift` — `FakePlaybackService`, `TooLongAudioFileService`,
-  `AudioFixture` (writes a temp WAV). `Views/ContentViewTests.swift` — placeholder (empty).
+  `SlowAudioFileService` (delayed decode, for overlapping-request tests), `AudioFixture` (writes a
+  temp WAV). `Views/ContentViewTests.swift` — placeholder (empty).
 
 The **audio engine** (`AVPlaybackService`) and the actual look/sound (loop seamlessness, waveform
 smoothness) need a device/eyes/ears — see **`TESTING.md`** (repo root) for the manual QA checklist.

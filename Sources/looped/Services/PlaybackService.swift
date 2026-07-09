@@ -82,7 +82,12 @@ final class AVPlaybackService: PlaybackService {
 		// Reconnect at the file's sample rate. `scheduleFile`/`Segment` sample-rate
 		// convert automatically, but `scheduleBuffer` (looping) plays raw at the
 		// node's output rate — matching the format keeps both paths in tune.
+		// Rewiring a *running* engine races the render thread (loading a second
+		// track crashed here) — stop it around the reconnect.
+		engine.stop()
 		connectGraph(format: format)
+		engine.prepare()
+		do { try engine.start() } catch { print("Engine failed: \(error)") }
 	}
 
 	// MARK: - Transport

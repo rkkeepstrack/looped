@@ -74,6 +74,25 @@ struct LibraryViewModelTests {
 		#expect(playback.playCount == 1)
 	}
 
+	@Test func overlappingPlayRequestsAreDroppedNotInterleaved() async throws {
+		// A double-click fires two row taps; the second must be dropped while the
+		// first load is in flight (interleaved setSource/play crashed the engine).
+		let (library, _, playback) = makeSUT(files: SlowAudioFileService(delay: .milliseconds(80)))
+		let url = try AudioFixture.tempSine(seconds: 1)
+		await library.add(urls: [url])
+		let track = try #require(library.tracks.first)
+
+		let first = Task { await library.play(track) }
+		try await Task.sleep(for: .milliseconds(20))
+		let second = Task { await library.play(track) }
+		await first.value
+		await second.value
+
+		#expect(playback.setSourceCount == 1)
+		#expect(playback.playCount == 1)
+		#expect(library.currentTrackID == track.id)
+	}
+
 	@Test func playFailedLoadKeepsCurrentTrackUnset() async throws {
 		let (library, player, playback) = makeSUT(files: TooLongAudioFileService())
 		let track = try Track(id: UUID(), url: AudioFixture.tempSine(seconds: 1), title: "t", duration: 1)

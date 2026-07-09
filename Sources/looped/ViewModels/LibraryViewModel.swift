@@ -24,6 +24,11 @@ final class LibraryViewModel: ObservableObject {
 	/// the library and playback; the services underneath stay UI-free.
 	private let player: PlayerViewModel
 
+	/// Guards against overlapping play requests (a double-click fires two row
+	/// taps): while one load is in flight, further taps are dropped. Main-actor
+	/// mutated, so the check-and-set is race-free.
+	private var playInFlight = false
+
 	init(player: PlayerViewModel) {
 		self.player = player
 	}
@@ -71,8 +76,16 @@ final class LibraryViewModel: ObservableObject {
 	/// Load + start the track; marks it current only if the load succeeded
 	/// (e.g. a >20-min file keeps the previous selection and shows loadError).
 	func play(_ track: Track) async {
+		let alreadyInFlight = await MainActor.run { () -> Bool in
+			if playInFlight { return true }
+			playInFlight = true
+			return false
+		}
+		guard !alreadyInFlight else { return }
+
 		await player.load(url: track.url)
 		await MainActor.run {
+			playInFlight = false
 			guard player.loadError == nil else { return }
 			currentTrackID = track.id
 			if !player.isPlaying {

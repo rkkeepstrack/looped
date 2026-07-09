@@ -95,6 +95,18 @@ struct TooLongAudioFileService: AudioFileService {
 	}
 }
 
+/// Wraps the real decoder behind an artificial delay — lets a test overlap two
+/// play requests deterministically (the double-click crash guard).
+struct SlowAudioFileService: AudioFileService {
+	let delay: Duration
+	private let inner = DefaultAudioFileService()
+
+	func load(url: URL) async throws -> LoadedAudio {
+		try await Task.sleep(for: delay)
+		return try await inner.load(url: url)
+	}
+}
+
 enum FixtureError: Error { case setupFailed }
 
 /// Writes a short quiet sine to a temp WAV and returns its URL. Used to produce a
