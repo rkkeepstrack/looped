@@ -31,6 +31,9 @@ enum Theme {
 	static let loopMarkerB = Color(red: 1.0, green: 0.66, blue: 0.30) // lighter amber
 	/// Fixed center playhead line.
 	static let iterator = Color.white.opacity(0.85)
+	/// Scrub highlight — subtle light blue (the cool counterpart to the warm
+	/// played-orange), drawn between the played edge and the scrub cursor.
+	static let waveformScrub = Color(red: 0.45, green: 0.68, blue: 0.90).opacity(0.75)
 
 	// MARK: Metrics
 

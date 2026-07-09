@@ -40,6 +40,25 @@ struct WaveformDisplayView: View {
 									.frame(width: win.width, height: height)
 									.mask(alignment: .leading) { Rectangle().frame(width: win.playheadX) }
 
+								// Scrub highlight (bug-fixes.md #1): while scrubbing, tint the span
+								// between the played edge and the scrub cursor (the viewport center)
+								// light blue — over the upcoming gray when scrubbing forward, over
+								// the played orange when scrubbing backwards. Fades out naturally as
+								// the snap-back shrinks the span to zero.
+								if offsetCalculator.isScrolling {
+									let centerTime = offsetCalculator.centerTime(playbackTime: time)
+									let centerX = offsetCalculator.chunkX(forTime: centerTime, chunkStartSample: win.chunkStartSample)
+									let lower = min(win.playheadX, centerX)
+									let upper = max(win.playheadX, centerX)
+									SyncWaveformCanvas(samples: win.samples, configuration: configuration(color: Theme.waveformScrub))
+										.frame(width: win.width, height: height)
+										.mask(alignment: .leading) {
+											Rectangle()
+												.frame(width: upper - lower)
+												.offset(x: lower)
+										}
+								}
+
 								loopOverlay(win: win, height: height)
 							}
 							.frame(width: win.width, height: height)

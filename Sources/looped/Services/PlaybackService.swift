@@ -149,29 +149,35 @@ final class AVPlaybackService: PlaybackService {
 		      let playerTime = player.playerTime(forNodeTime: nodeTime)
 		else { return lastPausedTime }
 
+		// The player node sits *upstream* of the time-pitch unit, so its sample clock
+		// already counts source frames — at rate 2× it advances 2 s per wall second.
+		// No rate division: that made `currentTime` drift at any rate ≠ 1× and broke
+		// the loop fold (bug-fixes.md #2).
 		var elapsed = Double(playerTime.sampleTime) / playerTime.sampleRate
+		let rate = Double(timePitch.rate)
 		// `lastRenderTime` only advances once per render buffer (~6–12 ms), which makes
 		// the clock step in quanta and the waveform pan judder. While playing, project
 		// onto the wall clock: the render timestamp's host time is the buffer's future
 		// *presentation* time, so `now - rendered` (negative, ≈ the output lead) shifts
 		// the sample position to what's audible now — and varies smoothly between
 		// render cycles. The render timestamps themselves jitter by up to a buffer, so
-		// low-pass the (elapsed − now) offset; a jump > 50 ms (seek, resume) snaps.
+		// low-pass the (elapsed − now·rate) offset (rate-scaled so it's stationary at
+		// any playback rate); a jump > 50 ms (seek, resume, rate change) snaps.
 		if player.isPlaying, nodeTime.isHostTimeValid {
 			let now = AVAudioTime.seconds(forHostTime: mach_absolute_time())
 			let rendered = AVAudioTime.seconds(forHostTime: nodeTime.hostTime)
-			elapsed += min(max(-0.25, now - rendered), 0.25)
+			elapsed += min(max(-0.25, now - rendered), 0.25) * rate
 
-			let offset = elapsed - now
+			let offset = elapsed - now * rate
 			if let smoothed = smoothedClockOffset, abs(offset - smoothed) < 0.05 {
 				smoothedClockOffset = smoothed + 0.1 * (offset - smoothed)
 			} else {
 				smoothedClockOffset = offset
 			}
-			elapsed = now + smoothedClockOffset!
+			elapsed = now * rate + smoothedClockOffset!
 		}
 		// The presentation lead can push a just-started clock slightly negative.
-		elapsed = max(0, elapsed / Double(timePitch.rate))
+		elapsed = max(0, elapsed)
 
 		// While looping, the render clock keeps counting across iterations; fold it
 		// back into the [A, B] window so the reported time stays in range.
