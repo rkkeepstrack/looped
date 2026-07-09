@@ -194,12 +194,6 @@ private struct Sidebar: View {
 					isCurrent: track.id == library.currentTrackID
 				)
 				.tag(track.id)
-				// Double-click loads the track into the waveform; simultaneous
-				// so it observes without blocking selection or drags.
-				.simultaneousGesture(
-					TapGesture(count: 2)
-						.onEnded { Task { await library.load(track) } }
-				)
 				.listRowSeparator(.hidden)
 				.listRowInsets(EdgeInsets(top: 1, leading: 0, bottom: 1, trailing: 0))
 			}
@@ -212,6 +206,16 @@ private struct Sidebar: View {
 					await library.addDropped(urls: urls, at: index)
 				}
 			}
+		}
+		// Native double-click: primaryAction fires on row double-click (no
+		// context menu — the builder is empty). No gesture on the rows, so
+		// nothing intercepts the mouse-down and row drags start anywhere on
+		// the row, not just its edges.
+		.contextMenu(forSelectionType: UUID.self) { _ in } primaryAction: { ids in
+			guard let id = ids.first,
+			      let track = library.tracks.first(where: { $0.id == id })
+			else { return }
+			Task { await library.load(track) }
 		}
 		.listStyle(.plain)
 		.scrollContentBackground(.hidden)
