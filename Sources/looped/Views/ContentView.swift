@@ -284,7 +284,13 @@ private struct TrackRow: View {
 		.frame(maxWidth: .infinity, alignment: .leading)
 		.background(
 			ZStack {
-				Rectangle().fill(Theme.surface) // opaque: masks the native highlight
+				// Opaque mask over the native (system-blue) selection highlight.
+				// Overdrawn horizontally: the NSTableView cell keeps its own side
+				// insets beyond the zeroed listRowInsets, and the highlight spans
+				// the full row — without the overdraw it peeks out at the edges.
+				Rectangle()
+					.fill(Theme.surface)
+					.padding(.horizontal, -16)
 				RoundedRectangle(cornerRadius: 6)
 					.fill(isSelected ? Color.white.opacity(0.12) : hovering ? Color.white.opacity(0.06) : Color.clear)
 					.padding(.vertical, 1)
