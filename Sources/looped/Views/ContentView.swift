@@ -11,14 +11,17 @@ struct ContentView: View {
 	@EnvironmentObject var audioPlayer: PlayerViewModel
 	@EnvironmentObject var offsetCalculator: WaveformViewModel
 	@AppStorage("sidebarOpen") private var sidebarOpen = true
+	@AppStorage("sidebarWidth") private var sidebarWidth = Double(Theme.sidebarWidth)
+	/// Width latched at drag start, so the resize tracks the cursor without drift.
+	@State private var sidebarDragStartWidth: Double?
 
 	var body: some View {
 		HStack(spacing: 0) {
 			if sidebarOpen {
 				Sidebar()
-					.frame(width: Theme.sidebarWidth)
+					.frame(width: clampedSidebarWidth)
 					.transition(.move(edge: .leading))
-				Divider()
+				sidebarResizeHandle
 			}
 			mainColumn
 		}
@@ -42,6 +45,39 @@ struct ContentView: View {
 		}
 		// Keyboard shortcuts (spacebar → play/pause)
 		.background(KeyboardHandler(audioPlayer: audioPlayer))
+	}
+
+	// MARK: Sidebar resize
+
+	private var clampedSidebarWidth: CGFloat {
+		CGFloat(min(max(sidebarWidth, Double(Theme.sidebarMinWidth)), Double(Theme.sidebarMaxWidth)))
+	}
+
+	/// The sidebar/main divider, widened into a grabbable resize handle.
+	private var sidebarResizeHandle: some View {
+		Divider()
+			// A hairline is impossible to grab — pad the hit area without
+			// visually widening the divider.
+			.contentShape(Rectangle().inset(by: -4))
+			.onHover { inside in
+				if inside {
+					NSCursor.resizeLeftRight.push()
+				} else {
+					NSCursor.pop()
+				}
+			}
+			.gesture(
+				DragGesture(minimumDistance: 1, coordinateSpace: .global)
+					.onChanged { value in
+						let start = sidebarDragStartWidth ?? sidebarWidth
+						sidebarDragStartWidth = start
+						sidebarWidth = min(
+							max(start + value.translation.width, Double(Theme.sidebarMinWidth)),
+							Double(Theme.sidebarMaxWidth)
+						)
+					}
+					.onEnded { _ in sidebarDragStartWidth = nil }
+			)
 	}
 
 	// MARK: Main column
@@ -83,31 +119,90 @@ struct ContentView: View {
 
 // MARK: - Sidebar
 
-/// Collapsible left panel. For now it holds the import button; the track list
-/// lands here in Plan 5.
+/// Collapsible left panel: the import button + the track library list.
 private struct Sidebar: View {
-	@EnvironmentObject var audioPlayer: PlayerViewModel
+	@EnvironmentObject var library: LibraryViewModel
+	/// Row picked by a single click — purely visual until a double-click plays it.
+	@State private var selectedTrackID: UUID?
 
 	var body: some View {
 		VStack(alignment: .leading, spacing: 14) {
 			Button {
-				Task { await audioPlayer.openFile() }
+				Task { await library.openFiles() }
 			} label: {
-				Label("Import File", systemImage: "square.and.arrow.down")
+				Label("Import Files", systemImage: "square.and.arrow.down")
 					.frame(maxWidth: .infinity)
 			}
 			.buttonStyle(.bordered)
 			.controlSize(.large)
 
-			Text("Your tracks will appear here")
-				.font(.caption)
-				.foregroundStyle(Theme.textSecondary)
+			if library.tracks.isEmpty {
+				Text("Your tracks will appear here")
+					.font(.caption)
+					.foregroundStyle(Theme.textSecondary)
+			} else {
+				ScrollView {
+					LazyVStack(alignment: .leading, spacing: 2) {
+						ForEach(library.tracks) { track in
+							TrackRow(
+								track: track,
+								isCurrent: track.id == library.currentTrackID,
+								isSelected: track.id == selectedTrackID
+							)
+							// Single click selects instantly (also on the first
+							// click of a double); the simultaneous double-click
+							// loads the track into the waveform.
+							.onTapGesture { selectedTrackID = track.id }
+							.simultaneousGesture(
+								TapGesture(count: 2)
+									.onEnded { Task { await library.load(track) } }
+							)
+						}
+					}
+				}
+			}
 
-			Spacer()
+			Spacer(minLength: 0)
 		}
 		.padding(.horizontal, 12)
 		.padding(.top, 48) // clear the top-left toggle
 		.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 		.background(Theme.surface)
+	}
+}
+
+/// One library row: title + duration; the current track reads in accent orange,
+/// the (single-click) selected row gets a lighter background.
+private struct TrackRow: View {
+	let track: Track
+	let isCurrent: Bool
+	let isSelected: Bool
+	@State private var hovering = false
+
+	var body: some View {
+		HStack(spacing: 8) {
+			Text(track.title)
+				.font(.callout)
+				.lineLimit(1)
+				.truncationMode(.tail)
+				.foregroundStyle(isCurrent ? Theme.accent : Theme.textPrimary)
+
+			Spacer(minLength: 4)
+
+			if let duration = track.duration {
+				Text(TimeFormatter.mmss(duration))
+					.font(.caption.monospacedDigit())
+					.foregroundStyle(isCurrent ? Theme.accentDim : Theme.textSecondary)
+			}
+		}
+		.padding(.horizontal, 8)
+		.padding(.vertical, 5)
+		.frame(maxWidth: .infinity, alignment: .leading)
+		.background(
+			RoundedRectangle(cornerRadius: 6)
+				.fill(isSelected ? Color.white.opacity(0.12) : hovering ? Color.white.opacity(0.06) : Color.clear)
+		)
+		.contentShape(Rectangle())
+		.onHover { hovering = $0 }
 	}
 }

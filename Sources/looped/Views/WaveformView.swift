@@ -85,6 +85,13 @@ struct WaveformDisplayView: View {
 					.frame(maxWidth: .infinity, minHeight: 120)
 			}
 
+			// Decode-in-flight spinner (double-clicking a library track).
+			if audioPlayer.isLoadingTrack {
+				ProgressView()
+					.controlSize(.large)
+					.tint(Theme.accent)
+			}
+
 			// Transparent overlay capturing scroll / drag to scrub the timeline.
 			ScrollObserverView(
 				offset: Binding(
