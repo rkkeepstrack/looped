@@ -48,6 +48,9 @@ enum Theme {
 	/// Fixed sidebar track-row height — uniform rows keep the hand-rolled
 	/// reorder/drop index math trivial (`RowInsertion`).
 	static let trackRowHeight: CGFloat = 28
+	/// The reorder/drop insertion line in the track list: dimmed text color,
+	/// quieter than the accent.
+	static let insertionLine = textPrimary.opacity(0.6)
 	static let panelCorner: CGFloat = 12
 	static let panelBorder = Color.white.opacity(0.08)
 

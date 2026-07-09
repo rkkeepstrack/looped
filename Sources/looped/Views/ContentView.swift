@@ -267,11 +267,11 @@ private struct Sidebar: View {
 			}
 	}
 
-	/// The themed insertion line: a 2pt accent rule at the active gap.
+	/// The themed insertion line: a 2pt rule at the active gap.
 	@ViewBuilder private var insertionLine: some View {
 		if let gap = activeGapIndex {
 			Rectangle()
-				.fill(Theme.accent)
+				.fill(Theme.insertionLine)
 				.frame(height: 2)
 				.offset(y: CGFloat(gap) * Theme.trackRowHeight - 1)
 				.allowsHitTesting(false)
