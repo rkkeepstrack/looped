@@ -17,7 +17,8 @@ struct LibraryViewModelTests {
 	{
 		let playback = FakePlaybackService()
 		let player = PlayerViewModel(playback: playback, files: files, looping: DefaultLoopingService())
-		return (LibraryViewModel(player: player), player, playback)
+		let library = LibraryViewModel(player: player, dropped: DefaultDroppedFileService())
+		return (library, player, playback)
 	}
 
 	// MARK: - add
@@ -57,41 +58,7 @@ struct LibraryViewModelTests {
 		#expect(library.tracks.map(\.url) == [wav])
 	}
 
-	// MARK: - Drag & drop (folder expansion)
-
-	/// Builds a fixture tree: root/{a.wav, notes.txt, nested/{b.wav, c.mp3-named-but-empty}}.
-	/// Files only need to exist — expansion filters by extension, not content.
-	private func makeFixtureTree() throws -> (root: URL, wavA: URL, wavB: URL) {
-		let root = FileManager.default.temporaryDirectory
-			.appendingPathComponent("looped-tree-\(UUID().uuidString)")
-		let nested = root.appendingPathComponent("nested")
-		try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
-		let wavA = root.appendingPathComponent("a.wav")
-		let wavB = nested.appendingPathComponent("b.wav")
-		try Data().write(to: wavA)
-		try Data().write(to: wavB)
-		try "not audio".write(to: root.appendingPathComponent("notes.txt"), atomically: true, encoding: .utf8)
-		try Data().write(to: nested.appendingPathComponent("cover.png"))
-		return (root, wavA, wavB)
-	}
-
-	@Test func expandingFoldersRecursesAndFiltersToSupportedAudio() throws {
-		let (root, wavA, wavB) = try makeFixtureTree()
-
-		let expanded = LibraryViewModel.expandingFolders(in: [root])
-
-		#expect(Set(expanded.map(\.lastPathComponent)) == Set([wavA, wavB].map(\.lastPathComponent)))
-	}
-
-	@Test func expandingFoldersPassesPlainFilesThrough() throws {
-		let wav = try AudioFixture.tempSine(seconds: 1)
-		let text = FileManager.default.temporaryDirectory
-			.appendingPathComponent("looped-fixture-\(UUID().uuidString).txt")
-		try "not audio".write(to: text, atomically: true, encoding: .utf8)
-
-		// Plain files aren't filtered here — add(urls:) applies the predicate.
-		#expect(LibraryViewModel.expandingFolders(in: [wav, text]) == [wav, text])
-	}
+	// MARK: - Drag & drop intake
 
 	@Test func addDroppedExpandsFoldersIntoTheLibrary() async throws {
 		let (library, _, _) = makeSUT()

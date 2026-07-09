@@ -23,14 +23,17 @@ final class LibraryViewModel: ObservableObject {
 	/// View-model → view-model is deliberate here: this is the bridge between
 	/// the library and playback; the services underneath stay UI-free.
 	private let player: PlayerViewModel
+	/// Provider→URL resolution + folder expansion for the drop intents.
+	private let dropped: DroppedFileService
 
 	/// Guards against overlapping play requests (a double-click fires two row
 	/// taps): while one load is in flight, further taps are dropped. Main-actor
 	/// mutated, so the check-and-set is race-free.
 	private var playInFlight = false
 
-	init(player: PlayerViewModel) {
+	init(player: PlayerViewModel, dropped: DroppedFileService) {
 		self.player = player
+		self.dropped = dropped
 	}
 
 	// MARK: - Import
@@ -87,13 +90,26 @@ final class LibraryViewModel: ObservableObject {
 
 	// MARK: - Drag & drop intake
 
+	/// Library-zone drop (the sidebar list / empty state): resolve the drag's
+	/// item providers, then insert at the drop gap. Views hand the providers
+	/// straight over — the NSItemProvider plumbing stays out of the view layer.
+	func handleLibraryDrop(providers: [NSItemProvider], at index: Int? = nil) async {
+		await addDropped(urls: dropped.urls(from: providers), at: index)
+	}
+
+	/// Waveform-zone drop: resolve providers, then load the first supported
+	/// file immediately.
+	func handleWaveformDrop(providers: [NSItemProvider]) async {
+		await loadDropped(urls: dropped.urls(from: providers))
+	}
+
 	/// Library-zone drop intake: expands folders into the supported audio files
-	/// inside, then feeds the regular `add(urls:at:)` path (`index` = the List
-	/// insertion point under the drop line). Mirrors `openFiles()`: when the
+	/// inside, then feeds the regular `add(urls:at:)` path (`index` = the
+	/// insertion gap under the drop line). Mirrors `openFiles()`: when the
 	/// library was empty, the first added track is loaded (no autoplay).
 	/// This type isn't main-actor-bound, so the folder walk runs off-main.
 	func addDropped(urls: [URL], at index: Int? = nil) async {
-		let expanded = Self.expandingFolders(in: urls)
+		let expanded = dropped.expandingFolders(in: urls)
 		guard !expanded.isEmpty else { return }
 
 		let wasEmpty = await MainActor.run { tracks.isEmpty }
@@ -107,7 +123,7 @@ final class LibraryViewModel: ObservableObject {
 	/// the library (deduped — an already-present track isn't duplicated) and
 	/// loaded immediately.
 	func loadDropped(urls: [URL]) async {
-		let expanded = Self.expandingFolders(in: urls)
+		let expanded = dropped.expandingFolders(in: urls)
 		guard let first = expanded.first(where: { Track.isSupported(url: $0) }) else { return }
 
 		await add(urls: [first])
@@ -116,56 +132,6 @@ final class LibraryViewModel: ObservableObject {
 			tracks.first { $0.url.standardizedFileURL == standardized }
 		}
 		if let track { await load(track) }
-	}
-
-	/// Recursively expands folder URLs into the supported audio files inside
-	/// (sorted by path for a stable row order); plain file URLs pass through
-	/// untouched — `add(urls:)` applies the type filter to those.
-	static func expandingFolders(in urls: [URL]) -> [URL] {
-		var expanded: [URL] = []
-		for url in urls {
-			guard (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else {
-				expanded.append(url)
-				continue
-			}
-			let enumerator = FileManager.default.enumerator(
-				at: url,
-				includingPropertiesForKeys: [.isRegularFileKey]
-			)
-			var found: [URL] = []
-			while let file = enumerator?.nextObject() as? URL {
-				guard (try? file.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true,
-				      Track.isSupported(url: file)
-				else { continue }
-				found.append(file)
-			}
-			expanded.append(contentsOf: found.sorted { $0.path < $1.path })
-		}
-		return expanded
-	}
-
-	/// Resolves dropped `.fileURL` item providers into URLs. macOS delivers the
-	/// payload as `Data`; reconstruct with `URL(dataRepresentation:relativeTo:)`.
-	static func urls(from providers: [NSItemProvider]) async -> [URL] {
-		var urls: [URL] = []
-		for provider in providers
-			where provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
-		{
-			let url: URL? = await withCheckedContinuation { continuation in
-				provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier) { item, _ in
-					switch item {
-					case let data as Data:
-						continuation.resume(returning: URL(dataRepresentation: data, relativeTo: nil))
-					case let url as URL:
-						continuation.resume(returning: url)
-					default:
-						continuation.resume(returning: nil)
-					}
-				}
-			}
-			if let url { urls.append(url) }
-		}
-		return urls
 	}
 
 	// MARK: - Playback bridge
