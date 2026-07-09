@@ -40,7 +40,7 @@ final class LibraryViewModel: ObservableObject {
 	func openFiles() async {
 		let urls: [URL] = await MainActor.run {
 			let panel = NSOpenPanel()
-			panel.allowedContentTypes = [UTType.wav, UTType.mp3, UTType.aiff]
+			panel.allowedContentTypes = Track.supportedTypes
 			panel.allowsMultipleSelection = true
 			return panel.runModal() == .OK ? panel.urls : []
 		}
@@ -61,14 +61,79 @@ final class LibraryViewModel: ObservableObject {
 		var added: [Track] = []
 		for url in urls {
 			let standardized = url.standardizedFileURL
-			guard !seen.contains(standardized),
-			      UTType(filenameExtension: url.pathExtension)?.conforms(to: .audio) == true
-			else { continue }
+			guard !seen.contains(standardized), Track.isSupported(url: url) else { continue }
 			seen.insert(standardized)
 			added.append(await makeTrack(url: url))
 		}
 		guard !added.isEmpty else { return }
 		await MainActor.run { tracks.append(contentsOf: added) }
+	}
+
+	// MARK: - Drag & drop intake
+
+	/// Drop intake: expands folders into the supported audio files inside, then
+	/// feeds the regular `add(urls:)` path. Mirrors `openFiles()`: when the
+	/// library was empty, the first added track is loaded (no autoplay).
+	/// This type isn't main-actor-bound, so the folder walk runs off-main.
+	func addDropped(urls: [URL]) async {
+		let expanded = Self.expandingFolders(in: urls)
+		guard !expanded.isEmpty else { return }
+
+		let wasEmpty = await MainActor.run { tracks.isEmpty }
+		await add(urls: expanded)
+		if wasEmpty, let first = await MainActor.run(body: { tracks.first }) {
+			await load(first)
+		}
+	}
+
+	/// Recursively expands folder URLs into the supported audio files inside
+	/// (sorted by path for a stable row order); plain file URLs pass through
+	/// untouched — `add(urls:)` applies the type filter to those.
+	static func expandingFolders(in urls: [URL]) -> [URL] {
+		var expanded: [URL] = []
+		for url in urls {
+			guard (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else {
+				expanded.append(url)
+				continue
+			}
+			let enumerator = FileManager.default.enumerator(
+				at: url,
+				includingPropertiesForKeys: [.isRegularFileKey]
+			)
+			var found: [URL] = []
+			while let file = enumerator?.nextObject() as? URL {
+				guard (try? file.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true,
+				      Track.isSupported(url: file)
+				else { continue }
+				found.append(file)
+			}
+			expanded.append(contentsOf: found.sorted { $0.path < $1.path })
+		}
+		return expanded
+	}
+
+	/// Resolves dropped `.fileURL` item providers into URLs. macOS delivers the
+	/// payload as `Data`; reconstruct with `URL(dataRepresentation:relativeTo:)`.
+	static func urls(from providers: [NSItemProvider]) async -> [URL] {
+		var urls: [URL] = []
+		for provider in providers
+			where provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
+		{
+			let url: URL? = await withCheckedContinuation { continuation in
+				provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier) { item, _ in
+					switch item {
+					case let data as Data:
+						continuation.resume(returning: URL(dataRepresentation: data, relativeTo: nil))
+					case let url as URL:
+						continuation.resume(returning: url)
+					default:
+						continuation.resume(returning: nil)
+					}
+				}
+			}
+			if let url { urls.append(url) }
+		}
+		return urls
 	}
 
 	// MARK: - Playback bridge

@@ -10,6 +10,8 @@ import SwiftUI
 struct ContentView: View {
 	@EnvironmentObject var audioPlayer: PlayerViewModel
 	@EnvironmentObject var offsetCalculator: WaveformViewModel
+	@EnvironmentObject var library: LibraryViewModel
+	@State private var isDropTargeted = false
 	@AppStorage("sidebarOpen") private var sidebarOpen = true
 	@AppStorage("sidebarWidth") private var sidebarWidth = Double(Theme.sidebarWidth)
 	/// Width latched at drag start, so the resize tracks the cursor without drift.
@@ -45,6 +47,23 @@ struct ContentView: View {
 		}
 		// Keyboard shortcuts (spacebar → play/pause)
 		.background(KeyboardHandler(audioPlayer: audioPlayer))
+		// Whole-window drop target: audio files/folders → library intake.
+		.onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
+			guard !providers.isEmpty else { return false }
+			Task {
+				let urls = await LibraryViewModel.urls(from: providers)
+				await library.addDropped(urls: urls)
+			}
+			return true
+		}
+		.overlay {
+			if isDropTargeted {
+				RoundedRectangle(cornerRadius: Theme.panelCorner)
+					.strokeBorder(Theme.accent.opacity(0.6), lineWidth: 2)
+					.padding(4)
+					.allowsHitTesting(false)
+			}
+		}
 	}
 
 	// MARK: Sidebar resize
@@ -137,7 +156,7 @@ private struct Sidebar: View {
 			.controlSize(.large)
 
 			if library.tracks.isEmpty {
-				Text("Your tracks will appear here")
+				Text("Drop audio files or folders here")
 					.font(.caption)
 					.foregroundStyle(Theme.textSecondary)
 			} else {
