@@ -21,11 +21,12 @@ Download `Looped-<version>.zip` from the [latest release](https://github.com/rkk
 
 ```bash
 brew tap rkkeepstrack/looped https://github.com/rkkeepstrack/looped.git
-brew install --cask --no-quarantine looped
+brew install --cask looped
+xattr -dr com.apple.quarantine "/Applications/Looped.app"
 ```
 
-The app is not notarized (no Apple Developer account), so macOS quarantines a plain
-download: `--no-quarantine` avoids that.
+The app is not notarized (no Apple Developer account), so macOS quarantines the download
+and refuses to open it — the `xattr` line clears that flag (same for a manual download).
 
 ## Prerequisites
 

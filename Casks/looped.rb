@@ -12,9 +12,8 @@ cask "looped" do
   app "Looped.app"
 
   caveats <<~EOS
-    Looped is not notarized (no Apple Developer account). Install with:
-      brew install --cask --no-quarantine looped
-    or, if already installed and macOS refuses to open it:
-      xattr -dr com.apple.quarantine /Applications/Looped.app
+    Looped is not notarized (no Apple Developer account), so macOS will
+    refuse to open it until the quarantine flag is cleared:
+      xattr -dr com.apple.quarantine "/Applications/Looped.app"
   EOS
 end

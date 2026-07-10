@@ -82,12 +82,14 @@
 	<section>
 		<h2>Or install with Homebrew</h2>
 		<pre><code>brew tap rkkeepstrack/looped https://github.com/rkkeepstrack/looped.git
-brew install --cask --no-quarantine looped</code></pre>
+brew install --cask looped
+xattr -dr com.apple.quarantine "/Applications/Looped.app"</code></pre>
 	</section>
 
 	<p class="note">
-		Requires macOS 15+. Looped isn’t notarized, so a plain download needs crawling into macOS security settings. (Homebrew’s
-		<code>--no-quarantine</code> does this for you). <br> Source on <a href="https://github.com/rkkeepstrack/looped">GitHub</a>.
+		Requires macOS 15+. Looped isn’t notarized, so macOS quarantines the download and refuses
+		to open it — the <code>xattr</code> line clears that (needed for a manual download too).
+		<br> Source on <a href="https://github.com/rkkeepstrack/looped">GitHub</a>.
 	</p>
 </main>
 </body>
