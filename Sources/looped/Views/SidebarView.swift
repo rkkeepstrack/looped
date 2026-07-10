@@ -51,17 +51,9 @@ struct SidebarView: View {
 	}
 
 	private var emptyDropZone: some View {
-		Text("Drop audio files or folders here")
-			.font(.caption)
-			.foregroundStyle(Theme.textSecondary)
-			.frame(maxWidth: .infinity, minHeight: 100)
-			.background(
-				RoundedRectangle(cornerRadius: Theme.panelCorner)
-					.strokeBorder(
-						emptyDropTargeted ? Theme.accent.opacity(0.6) : Theme.panelBorder,
-						lineWidth: emptyDropTargeted ? 2 : 1
-					)
-			)
+		DropHintLabel(highlighted: emptyDropTargeted)
+			.frame(maxWidth: .infinity)
+			.frame(height: 100)
 			.onDrop(of: [.fileURL], isTargeted: $emptyDropTargeted) { providers in
 				guard !providers.isEmpty else { return false }
 				Task { await library.handleLibraryDrop(providers: providers) }

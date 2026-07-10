@@ -5,7 +5,7 @@
 `looped` is a **macOS SwiftUI** audio-looping app: load an audio file (WAV / MP3 / AIFF), see an
 interactive waveform, play it back with adjustable speed/pitch/volume, scrub the timeline, set
 seamless **A/B loop points**. Shortcuts: space play/pause, tab sidebar, a/b toggle loop
-points, r resets them.
+points, r resets them, ⌫/⌦ removes the selected library track.
 
 - Platform: macOS only (deployment target **macOS 15**, `Package.swift`).
 - Frameworks: SwiftUI (UI), AppKit (scroll/keyboard capture), AVFoundation (audio), Combine.
@@ -24,6 +24,7 @@ Standard SwiftPM layout, everything under the repo/git root (this file, `Package
   `Stores/`, `ViewModels/`, `Views/`, `Utils/` (+ `Assets.xcassets`, excluded from the build).
 - **`Tests/loopedTests/`** — unit tests (module `loopedTests`), mirroring the source folders.
 - **`plans/`** — remaining-work docs (`README.md` first).
+- **`assets/`** — app icon: `AppIcon.svg` (source of truth) + the generated `AppIcon.icns`.
 
 ## Build & Run
 
@@ -39,9 +40,11 @@ just format         # swiftformat .   (just format-check to lint only)
 just clean          # swift package clean + remove .build/Looped.app
 ```
 
-`just run` assembles `.build/Looped.app` (an `Info.plist` + the SwiftPM binary) and `open`s it so it
-launches as a real foreground app (Dock/menu/focus) — min window 1024×800, set in `loopedApp.swift`.
-No asset catalog is compiled (`actool` needs Xcode) — no app icon / accent color via Info.plist.
+`just run` assembles `.build/Looped.app` (an `Info.plist` + the SwiftPM binary + the app icon) and
+`open`s it so it launches as a real foreground app (Dock/menu/focus) — min window 1024×800, set in
+`loopedApp.swift`. No asset catalog is compiled (`actool` needs Xcode); the app icon instead ships
+as a checked-in `assets/AppIcon.icns` (bundled via `CFBundleIconFile`), regenerated from
+`assets/AppIcon.svg` with `just icon` (needs `librsvg` from the Brewfile; `iconutil` is macOS-native).
 
 ## Architecture (SwiftUI + MVVM, DI'd services)
 
@@ -58,7 +61,7 @@ tests can fake them.
 library↔playback bridge; no VM→VM reference):
 
 - **`PlaybackCoordinator`** — owns the current source (decode via `AudioFileService`, engine
-  rewire, `loaded`) and the transport (play/pause/stop/seek, published clock/duration/load state,
+  rewire, `loaded`, `unload()` for removing the loaded track) and the transport (play/pause/stop/seek, published clock/duration/load state,
   the 0.03s timer, `livePlaybackTime()`); end-of-track detection fires `onTrackEnded`
   (→ `PlayerViewModel.trackEnded()`, the playthrough-mode branch) and source changes fire
   `onSourceChanged` (per-track resets).
@@ -76,7 +79,9 @@ library↔playback bridge; no VM→VM reference):
   drag & drop intents
   (`handleLibraryDrop(providers:at:)`, `handleWaveformDrop(providers:)`), `add(urls:at:)` as the
   single intake (dedupe + `Track.isSupported` filter + `AVURLAsset` metadata, no decode),
-  `move` (reorder), `load(_:)` bridging to the coordinator (no autoplay), and library-order
+  `move` (reorder), `remove` (⌫/⌦; removing the loaded track unloads it, selection moves to
+  a neighbor) acting on the visual row selection (`selectedTrackID`, lifted here so the
+  keyboard can reach it), `load(_:)` bridging to the coordinator (no autoplay), and library-order
   transport: `next()`/`previous()`/`trackEnded()` (auto-advance) — the *decisions* (ordering,
   clamping, restart rule) are pure functions in `TrackNavigation`; the VM only executes the move.
   Owns persistence: `restore()` on launch, saves via `LibraryStore` on every mutation, stashes /
@@ -131,16 +136,18 @@ One line per file; the *why* behind non-obvious designs lives in the next sectio
 | `Views/ContentView.swift` | Root layout: sidebar (collapsible, resizable, `@AppStorage`), header, waveform (= quick-load drop zone), minimap strip, bottom bar; installs `keyboardShortcuts`. |
 | `Views/SidebarView.swift` | Left panel: import-files + import-folder buttons, empty-state drop zone, hosts `TrackListView`. |
 | `Views/PlaythroughModeButton.swift` | Cycling end-of-track mode button (icon + tooltip per mode), hosted in the transport cluster. |
-| `Views/TrackListView.swift` | Hand-rolled track list (+ private `TrackRow`, drop delegate): themed selection, drag-reorder, insertion indicator. |
+| `Views/TrackListView.swift` | Hand-rolled track list (+ private `TrackRow`, drop delegate): themed selection, drag-reorder, insertion indicator, below-list append drop + drag-over hint. |
 | `Views/ControlsView.swift` | Slim bottom bar: volume + rate/pitch sliders with sync-link icon (left), centered transport (stop/play/pause/prev/next/mode), A/B `LoopPanel` (right). |
 | `Views/LiveWaveformView.swift` | Windowed two-layer waveform render (live per display frame), scrub highlight, A/B markers, center playhead. |
+| `Views/EmptyStateView.swift` | Content-column placeholder when nothing is loaded (mark = swappable logo stand-in). |
+| `Views/DropHintLabel.swift` | "Drop audio here" field styling, shared by the sidebar empty state and the list's drag-over hint. |
 | `Views/MinimapView.swift` | Full-track minimap strip: whole-song envelope, viewport highlight box (drag = scrub, outside click = seek), loop tint. |
 | `Views/SyncWaveformCanvas.swift` | Synchronous DSWaveformImage canvas shared by the main waveform and the minimap. |
 | `Views/Theme.swift` | Design tokens: palette, waveform colors, layout metrics. |
 | `Views/Modifiers/HoverEffects.swift` | Button hover feedback: `hoverHighlight()` wash (borderless), `hoverBrightness()` (bordered). |
 | `Views/Modifiers/RightClick.swift` | `onRightClick` modifier: AppKit overlay claiming only right-button events (clears single loop points). |
 | `Views/Modifiers/ScrollObserver.swift` | `observeScrolling` modifier: scroll-wheel + mouse-drag capture → `WaveformViewModel`. |
-| `Views/Modifiers/KeyboardShortcuts.swift` | `keyboardShortcuts` modifier: key monitor; space play/pause, tab sidebar, a/b/r loop points; ignores modal panels. |
+| `Views/Modifiers/KeyboardShortcuts.swift` | `keyboardShortcuts` modifier: key monitor; space play/pause, tab sidebar, a/b/r loop points, ⌫/⌦ remove track; ignores modal panels. |
 | `Views/Modifiers/HoverActionLabel.swift` | Shared caption label that turns into an action ("Reset") on hover — slider labels + loop panel title. |
 | `Utils/TimeFormatter.swift` | `m:ss` time formatting. |
 | `Utils/RowInsertion.swift` | Pure gap-index math for list reorder/drop (gap N = space above row N; matches `Array.move` offsets). |
@@ -221,6 +228,16 @@ One line per file; the *why* behind non-obvious designs lives in the next sectio
   Missing files are dropped silently on load. Restore is latched to run once (`.task` re-fires on
   window recreation) and loads the last track without autoplay. The sliders bind through
   `PlayerViewModel` (no view-local `@State`) so applied per-track values actually show.
+- **Library QoL (plan 08)**: the list *content* is stretched to the viewport height
+  (`minHeight`), so dropping anywhere below the rows hits the same delegate and
+  `RowInsertion.gapIndex`'s clamp turns it into an append (gap = `count`) — one delegate, no
+  second coordinate space. The drag-over drop hint lives in the free space below the rows
+  (hidden when the list fills the column; linear 0.15 s fade) and is driven by
+  `ReorderState.isExternalDragHovering` (= external gap set). Deleting the loaded track goes
+  through `PlaybackCoordinator.unload()` — stop + clear + `onSourceChanged`, the only path
+  that *removes* a source rather than replacing it; the content column then collapses to
+  just `EmptyStateView` (still the quick-load drop zone) — header, minimap, and controls
+  are hidden entirely (also the first-launch state).
 - **Rows have a fixed height** (`Theme.trackRowHeight`) so `RowInsertion`'s gap math stays trivial.
 
 ## Tests

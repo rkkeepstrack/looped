@@ -73,6 +73,19 @@ real track (WAV/MP3/AIFF) a couple of minutes long. Launch with `just run`.
 - [ ] Clicking outside the box seeks there; clicking **inside** the box does nothing.
 - [ ] Played-orange tint, scrub tint, and the A/B loop tint/lines mirror the big view.
 
+**Library**
+- [ ] ⌫ / ⌦ removes the **selected** track (key events need a real window — not
+      automatable headless); selection moves to a neighbor so repeated deletes walk
+      the list. **[auto: view-model]**
+- [ ] Removing the currently **loaded** track stops playback; the content column
+      collapses to just the empty-state placeholder (no header/minimap/controls),
+      and dropping a file on it still loads. **[auto: state]**
+- [ ] Dropping files in the empty space **below** the list appends them; the
+      insertion line shows at the last gap. **[auto: gap math]**
+- [ ] While dragging files over the library, the "Drop audio files or folders here"
+      hint fades in (linear) in the free space below the rows — and never when the
+      list fills the visible column; it fades out on drop or drag-exit.
+
 **Speed / volume**
 - [ ] Speed slider changes tempo without altering pitch; volume slider works. **[auto: wiring]**
 

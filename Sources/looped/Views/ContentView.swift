@@ -47,7 +47,7 @@ struct ContentView: View {
 			.help("Toggle sidebar")
 			.padding(10)
 		}
-		.keyboardShortcuts(player: audioPlayer, toggleSidebar: { sidebarOpen.toggle() })
+		.keyboardShortcuts(player: audioPlayer, library: library, toggleSidebar: { sidebarOpen.toggle() })
 	}
 
 	// MARK: Sidebar resize
@@ -87,13 +87,19 @@ struct ContentView: View {
 
 	private var mainColumn: some View {
 		VStack(spacing: 0) {
-			header
-			Divider()
-			waveformDropZone
-			Divider()
-			MinimapView()
-			Divider()
-			ControlsView()
+			// No track loaded: just the placeholder (still the drop zone) — no
+			// header, minimap, or controls to operate on nothing.
+			if audioPlayer.audioURL == nil {
+				waveformDropZone
+			} else {
+				header
+				Divider()
+				waveformDropZone
+				Divider()
+				MinimapView()
+				Divider()
+				ControlsView()
+			}
 		}
 	}
 

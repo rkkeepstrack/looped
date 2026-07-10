@@ -20,6 +20,9 @@ final class LibraryViewModel: ObservableObject {
 
 	@Published private(set) var tracks: [Track] = []
 	@Published var currentTrackID: UUID?
+	/// Single-click row selection — purely visual until a double-click loads;
+	/// the delete keys act on it. Distinct from `currentTrackID` (the *loaded* track).
+	@Published var selectedTrackID: UUID?
 
 	// MARK: Wiring (set at the composition root)
 
@@ -187,6 +190,31 @@ final class LibraryViewModel: ObservableObject {
 		persist()
 	}
 
+	// MARK: - Remove
+
+	/// Remove a track from the library (⌫/⌦ on the selected row). Removing the
+	/// currently loaded track unloads it (playback stops, the content view shows
+	/// the empty state). Selection moves to the nearest neighbor so repeated
+	/// deletes walk the list.
+	@MainActor func remove(id: UUID) {
+		guard let index = tracks.firstIndex(where: { $0.id == id }) else { return }
+		tracks.remove(at: index)
+		if currentTrackID == id {
+			currentTrackID = nil
+			player.unload()
+		}
+		if selectedTrackID == id {
+			selectedTrackID = tracks.isEmpty ? nil : tracks[min(index, tracks.count - 1)].id
+		}
+		persist()
+	}
+
+	/// ⌫/⌦: remove the selected row.
+	@MainActor func removeSelected() {
+		guard let id = selectedTrackID else { return }
+		remove(id: id)
+	}
+
 	// MARK: - Drag & drop intake
 
 	/// Library-zone drop (the sidebar list / empty state): resolve the drag's
@@ -252,6 +280,12 @@ final class LibraryViewModel: ObservableObject {
 		await MainActor.run {
 			playInFlight = false
 			if loadedOK {
+				// The row may have been removed (⌫) while the decode was in
+				// flight — don't resurrect it as the current track.
+				guard tracks.contains(where: { $0.id == track.id }) else {
+					player.unload()
+					return
+				}
 				currentTrackID = track.id
 				// Look the parameters up by id — the row may have been updated
 				// (a stash) since the caller captured `track`.

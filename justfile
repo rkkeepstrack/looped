@@ -45,9 +45,15 @@ bundle config="debug":
     shutil.rmtree(app, ignore_errors=True)
     macos.mkdir(parents=True)
     shutil.copy(Path(bin_dir) / "looped", macos / "looped")
+    icns = Path("assets/AppIcon.icns")
+    if icns.exists():
+        resources = app / "Contents/Resources"
+        resources.mkdir()
+        shutil.copy(icns, resources / "AppIcon.icns")
     info = {
         "CFBundleDevelopmentRegion": "en",
         "CFBundleExecutable": "looped",
+        "CFBundleIconFile": "AppIcon",
         "CFBundleIdentifier": "RK.looped",
         "CFBundleInfoDictionaryVersion": "6.0",
         "CFBundleName": "Looped",
@@ -62,6 +68,20 @@ bundle config="debug":
         plistlib.dump(info, f)
     (app / "Contents/PkgInfo").write_text("APPL????")
     print(app)
+
+# Regenerate assets/AppIcon.icns from assets/AppIcon.svg (needs librsvg; iconutil
+# ships with macOS). The .icns is checked in, so this only runs after icon edits.
+icon:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    iconset=$(mktemp -d)/AppIcon.iconset
+    mkdir -p "$iconset"
+    for size in 16 32 128 256 512; do
+        rsvg-convert -w "$size" -h "$size" assets/AppIcon.svg -o "$iconset/icon_${size}x${size}.png"
+        rsvg-convert -w "$((size * 2))" -h "$((size * 2))" assets/AppIcon.svg -o "$iconset/icon_${size}x${size}@2x.png"
+    done
+    iconutil -c icns "$iconset" -o assets/AppIcon.icns
+    echo "wrote assets/AppIcon.icns"
 
 # Reformat all Swift sources (SwiftFormat, config: .swiftformat).
 format:

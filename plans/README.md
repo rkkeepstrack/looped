@@ -5,15 +5,12 @@ Build/run/test and architecture live in the repo-root `CLAUDE.md`.
 
 Ordered, reviewable slices:
 
-- **[08-library-qol.md](08-library-qol.md)** — library QoL: ⌫/⌦ delete, drop below the
-  list appends, animated drop hint while dragging. ⬜ (independent)
 - **[09-error-toasts.md](09-error-toasts.md)** — general error handling: themed toasts,
   meaningful messages, per-action aggregation, no silent failures. ⬜ (best last-ish —
   touches most layers)
 - **[10-native-menu.md](10-native-menu.md)** — menu bar overhaul: File → library actions
   (import files/folder, remove selected), full Playback menu with shortcuts +
-  rate/pitch/volume/sync, new Loop menu, Edit menu removed. ⬜ (remove-selected part
-  depends on 08)
+  rate/pitch/volume/sync, new Loop menu, Edit menu removed. ⬜ (independent)
 - **[bug-fixes.md](bug-fixes.md)** — open bugs. Currently empty.
 
 **Mockups:** `mockup/2026-07-08-ui-layout.png` (sidebar list, controls layout),
@@ -34,4 +31,7 @@ stop at end of track, one cycling sidebar button, branch in `PlayerViewModel`) �
 library persistence (06: JSON `LibraryStore` — list, selection, per-track slider
 values — restored on launch; playthrough mode in `UserDefaults`) · controls redesign
 (07: slim bottom bar with viewport-centered split play/pause + mode transport, sync-link
-icon, sidebar import-folder button, native menu bar with File ▸ Open… ⌘O + Playback menu).
+icon, sidebar import-folder button, native menu bar with File ▸ Open… ⌘O + Playback menu) ·
+library QoL (08: ⌫/⌦ removes the selected track — removing the loaded one unloads via
+`PlaybackCoordinator.unload()` into an `EmptyStateView` placeholder; drops below the list
+append; animated drop hint while dragging over the library).
