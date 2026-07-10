@@ -29,9 +29,15 @@ struct AudioFileServiceTests {
 
 	// MARK: - Error messages
 
-	@Test func errorDescriptions() {
-		#expect(AudioFileServiceError.tooLong(maxMinutes: 20).errorDescription == "That track is longer than 20 minutes.")
-		#expect(AudioFileServiceError.bufferCreationFailed.errorDescription == "Couldn't read that audio file.")
+	@Test func errorDescriptionsNameTheFile() {
+		#expect(
+			AudioFileServiceError.tooLong(filename: "song.wav", maxMinutes: 20).errorDescription
+				== "“song.wav” is longer than 20 minutes."
+		)
+		#expect(
+			AudioFileServiceError.bufferCreationFailed(filename: "song.wav").errorDescription
+				== "Couldn't read “song.wav”."
+		)
 	}
 
 	// MARK: - Happy-path decode

@@ -87,7 +87,7 @@ struct LiveWaveformView: View {
 					}
 				}
 			} else {
-				EmptyStateView(error: audioPlayer.loadError)
+				EmptyStateView()
 			}
 
 			// Decode-in-flight spinner (double-clicking a library track).

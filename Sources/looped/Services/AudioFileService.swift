@@ -15,13 +15,15 @@ protocol AudioFileService: Sendable {
 }
 
 enum AudioFileServiceError: Error, LocalizedError {
-	case bufferCreationFailed
-	case tooLong(maxMinutes: Int)
+	case bufferCreationFailed(filename: String)
+	case tooLong(filename: String, maxMinutes: Int)
 
 	var errorDescription: String? {
 		switch self {
-		case .bufferCreationFailed: "Couldn't read that audio file."
-		case let .tooLong(maxMinutes): "That track is longer than \(maxMinutes) minutes."
+		case let .bufferCreationFailed(filename):
+			"Couldn't read “\(filename)”."
+		case let .tooLong(filename, maxMinutes):
+			"“\(filename)” is longer than \(maxMinutes) minutes."
 		}
 	}
 }
@@ -42,12 +44,15 @@ struct DefaultAudioFileService: AudioFileService {
 
 		let duration = format.sampleRate > 0 ? Double(file.length) / format.sampleRate : 0
 		guard !Self.exceedsDurationLimit(duration) else {
-			throw AudioFileServiceError.tooLong(maxMinutes: Self.maxDurationMinutes)
+			throw AudioFileServiceError.tooLong(
+				filename: url.lastPathComponent,
+				maxMinutes: Self.maxDurationMinutes
+			)
 		}
 
 		let capacity = AVAudioFrameCount(file.length)
 		guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: capacity) else {
-			throw AudioFileServiceError.bufferCreationFailed
+			throw AudioFileServiceError.bufferCreationFailed(filename: url.lastPathComponent)
 		}
 		try file.read(into: buffer, frameCount: capacity)
 		buffer.frameLength = capacity

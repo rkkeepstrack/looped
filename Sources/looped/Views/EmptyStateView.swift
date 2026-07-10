@@ -10,10 +10,6 @@
 import SwiftUI
 
 struct EmptyStateView: View {
-	/// A failed load's message — with no header on screen, the placeholder is
-	/// the only place left to surface it.
-	var error: String?
-
 	var body: some View {
 		VStack(spacing: 14) {
 			Image(systemName: "waveform.circle")
@@ -25,11 +21,6 @@ struct EmptyStateView: View {
 			Text("Load a track to get started — drop audio here or press ⌘O")
 				.font(.callout)
 				.foregroundStyle(Theme.textSecondary)
-			if let error {
-				Text(error)
-					.font(.callout)
-					.foregroundStyle(Theme.accent)
-			}
 		}
 		.frame(maxWidth: .infinity, maxHeight: .infinity)
 	}

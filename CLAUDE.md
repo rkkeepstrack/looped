@@ -57,14 +57,18 @@ player must not retain the library) and the per-track parameter bridge
 and hands the view-models to the views as `environmentObject`s. Services sit behind protocols so
 tests can fake them.
 
-**Store** (`Stores/`, a UI-free `ObservableObject` both view-models depend on — the
-library↔playback bridge; no VM→VM reference):
+**Stores** (`Stores/`, UI-free `ObservableObject`s shared across view-models):
 
 - **`PlaybackCoordinator`** — owns the current source (decode via `AudioFileService`, engine
   rewire, `loaded`, `unload()` for removing the loaded track) and the transport (play/pause/stop/seek, published clock/duration/load state,
   the 0.03s timer, `livePlaybackTime()`); end-of-track detection fires `onTrackEnded`
   (→ `PlayerViewModel.trackEnded()`, the playthrough-mode branch) and source changes fire
-  `onSourceChanged` (per-track resets).
+  `onSourceChanged` (per-track resets). The library↔playback bridge; no VM→VM reference.
+- **`ToastCenter`** — the error-surfacing store (the single user-visible error channel):
+  `report(...)` appends to a published toast queue (one toast per user action, messages
+  aggregated by the caller), auto-dismiss after ~4 s, manual dismiss on click. Injected
+  where errors arise (both view-models + the coordinator); services stay throwing and
+  never see it.
 
 **View-models** (`ObservableObject`: `@Published` state + intents, no audio graph, no layout):
 
@@ -125,12 +129,13 @@ One line per file; the *why* behind non-obvious designs lives in the next sectio
 | `Models/PlaythroughMode.swift` | End-of-track mode (loop / advance / stop) + cycle order. |
 | `Models/TrackParameters.swift` | Per-track slider state value (rate/pitch/volume/sync). |
 | `Services/PlaybackService.swift` | Audio graph, transport, loop scheduling, playback clock. |
-| `Services/AudioFileService.swift` | Async decode; 20-min limit. |
+| `Services/AudioFileService.swift` | Async decode; 20-min limit; errors name the file. |
 | `Services/LoopingService.swift` | Pure loop-buffer slice + seam crossfade. |
 | `Services/DroppedFileService.swift` | Drop providers → URLs; folder expansion. |
 | `Services/WaveformService.swift` | Pure waveform analysis + viewport window math + overview downsampling/mapper. |
 | `Services/LibraryStore.swift` | Library persistence protocol + JSON impl (Application Support). |
-| `Stores/PlaybackCoordinator.swift` | Playback store: source + transport + clock timer; track-ended/source-changed callbacks. |
+| `Stores/PlaybackCoordinator.swift` | Playback store: source + transport + clock timer; track-ended/source-changed callbacks; load failures → toasts. |
+| `Stores/ToastCenter.swift` | Error-surfacing store: published toast queue, auto/manual dismiss. |
 | `ViewModels/PlayerViewModel.swift` | Transport projection + split play/pause + loop/rate/pitch/volume intents; `currentParameters` bundle; persisted playthrough mode. |
 | `ViewModels/LibraryViewModel.swift` | Library state/intents; import panels (files/folder/open-and-load); play bridge; next/previous/auto-advance; restore/save + per-track parameter stash. |
 | `ViewModels/WaveformViewModel.swift` | Waveform viewport state; scrub/snap-back. |
@@ -142,6 +147,7 @@ One line per file; the *why* behind non-obvious designs lives in the next sectio
 | `Views/ControlsView.swift` | Slim bottom bar: volume + rate/pitch sliders with sync-link icon (left), centered transport (stop/play/pause/prev/next/mode), A/B `LoopPanel` (right). |
 | `Views/LiveWaveformView.swift` | Windowed two-layer waveform render (live per display frame), scrub highlight, A/B markers, center playhead. |
 | `Views/EmptyStateView.swift` | Content-column placeholder when nothing is loaded (mark = swappable logo stand-in). |
+| `Views/ToastView.swift` | `ToastStackView`: themed error-toast cards, bottom-trailing above the controls bar. |
 | `Views/DropHintLabel.swift` | "Drop audio here" field styling, shared by the sidebar empty state and the list's drag-over hint. |
 | `Views/MinimapView.swift` | Full-track minimap strip: whole-song envelope, viewport highlight box (drag = scrub, outside click = seek), loop tint. |
 | `Views/SyncWaveformCanvas.swift` | Synchronous DSWaveformImage canvas shared by the main waveform and the minimap. |
@@ -241,6 +247,16 @@ One line per file; the *why* behind non-obvious designs lives in the next sectio
   just `EmptyStateView` (still the quick-load drop zone) — header, minimap, and controls
   are hidden entirely (also the first-launch state).
 - **Rows have a fixed height** (`Theme.trackRowHeight`) so `RowInsertion`'s gap math stays trivial.
+- **Error toasts (plan 09)**: all user-visible errors go through `ToastCenter` — the old
+  header/empty-state `loadError` text is gone. One toast per user *action*: the intake
+  paths collect `IntakeIssue`s (unsupported files with names, unreadable drop items,
+  nothing-usable) and report once; **dedupe skips stay silent** (re-adding a track is a
+  no-op by design). Load failures toast from the coordinator with the filename in the
+  message. Engine-start failures surface via `AVPlaybackService.onEngineStartFailure`
+  (wired to the toast center at the composition root; an init-time failure is held until
+  the callback is set) instead of `print`. `LibraryViewModel.load` is no longer
+  `@discardableResult` — call sites either branch on the result or discard explicitly
+  (the toast already covers the failure).
 
 ## Tests
 
@@ -256,12 +272,14 @@ Two layers, mirroring the source folders:
   stays a manual check — needs a live drag pasteboard), `LibraryStoreTests` (round-trip +
   missing-file filter over a temp dir), `RowInsertionTests` (gap math),
   `TrackNavigationTests` (transport policy).
-- _View-model behavior_ via the doubles in `Support/TestDoubles.swift` (`FakePlaybackService` spy,
+- _Store & view-model behavior_ via the doubles in `Support/TestDoubles.swift` (`FakePlaybackService` spy,
   `FakeLibraryStore`, `TooLongAudioFileService`, `SlowAudioFileService` for overlapping-request
   tests, `AudioFixture` temp WAVs): `PlaybackCoordinatorTests` (end-of-track via the exposed
-  `tick()` — no run-loop spinning), `PlayerViewModelTests` (incl. split play/pause and playthrough modes, driven via
+  `tick()` — no run-loop spinning; load-failure toast), `ToastCenterTests` (queue/dismiss),
+  `PlayerViewModelTests` (incl. split play/pause and playthrough modes, driven via
   the coordinator's `tick()`; ephemeral `UserDefaults` suite per instance),
-  `LibraryViewModelTests` (incl. next/previous/auto-advance, restore + parameter stash),
+  `LibraryViewModelTests` (incl. next/previous/auto-advance, restore + parameter stash,
+  intake toast aggregation),
   `WaveformViewModelTests`, `ReorderStateTests` (drag latching, no-op slots, external-gap precedence).
 
 The audio engine and the actual look/sound (loop seamlessness, waveform smoothness) need

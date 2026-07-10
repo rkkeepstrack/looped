@@ -24,8 +24,8 @@ final class PlaybackCoordinatorTests {
 	}
 
 	private func loadedCoordinator() async -> PlaybackCoordinator {
-		let transport = PlaybackCoordinator(playback: fake, files: DefaultAudioFileService())
-		await transport.load(url: fixture)
+		let transport = PlaybackCoordinator(playback: fake, files: DefaultAudioFileService(), toasts: ToastCenter())
+		_ = await transport.load(url: fixture)
 		return transport
 	}
 
@@ -79,7 +79,7 @@ final class PlaybackCoordinatorTests {
 		transport.play()
 		transport.currentTime = 0.5
 
-		await transport.load(url: fixture)
+		_ = await transport.load(url: fixture)
 
 		#expect(sourceChanges == 1)
 		#expect(!transport.isPlaying)
@@ -103,7 +103,7 @@ final class PlaybackCoordinatorTests {
 	}
 
 	@Test func unloadWithoutASourceIsANoOp() {
-		let transport = PlaybackCoordinator(playback: fake, files: DefaultAudioFileService())
+		let transport = PlaybackCoordinator(playback: fake, files: DefaultAudioFileService(), toasts: ToastCenter())
 		var sourceChanges = 0
 		transport.onSourceChanged = { sourceChanges += 1 }
 
@@ -114,11 +114,17 @@ final class PlaybackCoordinatorTests {
 	}
 
 	@Test func loadReturnsSuccess() async {
-		let transport = PlaybackCoordinator(playback: fake, files: DefaultAudioFileService())
+		let transport = PlaybackCoordinator(playback: fake, files: DefaultAudioFileService(), toasts: ToastCenter())
 		#expect(await transport.load(url: fixture))
+	}
 
-		let failing = PlaybackCoordinator(playback: fake, files: TooLongAudioFileService())
+	@Test func failedLoadReportsAToastNamingTheFile() async {
+		let toasts = ToastCenter()
+		let failing = PlaybackCoordinator(playback: fake, files: TooLongAudioFileService(), toasts: toasts)
+
 		#expect(!(await failing.load(url: fixture)))
-		#expect(failing.loadError != nil)
+
+		#expect(toasts.toasts.count == 1)
+		#expect(toasts.toasts.first?.messages.first?.contains(fixture.lastPathComponent) == true)
 	}
 }

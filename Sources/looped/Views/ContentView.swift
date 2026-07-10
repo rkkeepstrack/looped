@@ -89,14 +89,22 @@ struct ContentView: View {
 		VStack(spacing: 0) {
 			// No track loaded: just the placeholder (still the drop zone) — no
 			// header, minimap, or controls to operate on nothing.
-			if audioPlayer.audioURL == nil {
-				waveformDropZone
-			} else {
-				header
-				Divider()
-				waveformDropZone
-				Divider()
-				MinimapView()
+			VStack(spacing: 0) {
+				if audioPlayer.audioURL == nil {
+					waveformDropZone
+				} else {
+					header
+					Divider()
+					waveformDropZone
+					Divider()
+					MinimapView()
+				}
+			}
+			// Anchored above the controls bar (the overlay stops here).
+			.overlay(alignment: .bottomTrailing) {
+				ToastStackView()
+			}
+			if audioPlayer.audioURL != nil {
 				Divider()
 				ControlsView()
 			}
@@ -130,11 +138,7 @@ struct ContentView: View {
 				.font(.headline)
 				.foregroundStyle(audioPlayer.currentFileName == nil ? Theme.textSecondary : Theme.textPrimary)
 
-			if let error = audioPlayer.loadError {
-				Text(error)
-					.font(.subheadline)
-					.foregroundStyle(Theme.accent)
-			} else if audioPlayer.audioURL != nil {
+			if audioPlayer.audioURL != nil {
 				Text("\(TimeFormatter.mmss(audioPlayer.currentTime)) | \(TimeFormatter.mmss(audioPlayer.duration))")
 					.font(.subheadline.monospacedDigit())
 					.foregroundStyle(Theme.textSecondary)

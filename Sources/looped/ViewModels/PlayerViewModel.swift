@@ -51,11 +51,6 @@ final class PlayerViewModel: ObservableObject {
 		transport.currentURL?.lastPathComponent
 	}
 
-	/// Non-nil when the last load failed (e.g. file too long); shown in the header.
-	var loadError: String? {
-		transport.loadError
-	}
-
 	/// True while a file decode is in flight — the waveform shows a spinner.
 	var isLoadingTrack: Bool {
 		transport.isLoadingTrack
@@ -130,7 +125,8 @@ final class PlayerViewModel: ObservableObject {
 	}
 
 	func load(url: URL) async {
-		await transport.load(url: url)
+		// A failed load already surfaced as a toast; nothing to do here.
+		_ = await transport.load(url: url)
 	}
 
 	// MARK: - Transport
@@ -178,7 +174,6 @@ final class PlayerViewModel: ObservableObject {
 	/// armed, seeks within [A, B] move the loop phase and anything outside is
 	/// refused (scrub stays in the loop); without a loop, out-of-bounds times
 	/// are refused. On `false` the caller eases the waveform back.
-	@discardableResult
 	func jumpTo(time: TimeInterval) -> Bool {
 		if playback.isLooping {
 			guard let a = loopStart.0, let b = loopEnd.0, time >= a, time <= b else { return false }

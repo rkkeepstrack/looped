@@ -6,8 +6,8 @@
 //  (import is library UI, not playback), and bridges row taps / next-previous /
 //  auto-advance to playback via PlaybackCoordinator. Metadata for the list
 //  comes from AVURLAsset (cheap container read) — the full decode still
-//  happens per play via AudioFileService, so the 20-min limit / loadError
-//  path applies on play.
+//  happens per play via AudioFileService, so the 20-min limit applies on
+//  play (failures surface as toasts via the coordinator).
 //
 //  Main-actor-bound: all published state and intents run on the main actor,
 //  which also makes the in-flight guards (`playInFlight`, `hasRestored`)
@@ -18,6 +18,33 @@ import AppKit
 import AVFoundation
 import Combine
 import UniformTypeIdentifiers
+
+/// Per-cause intake failures. One user action (an import, one drop) aggregates
+/// all its issues into a single toast. Dedupe skips are deliberately absent —
+/// re-adding an existing track is a no-op by design, not an error.
+enum IntakeIssue: Error, LocalizedError, Equatable {
+	/// Files that aren't supported audio (filenames incl. extension).
+	case unsupportedFiles([String])
+	/// Drag items whose provider failed to resolve into a URL.
+	case unreadableDropItems(Int)
+	/// The action yielded nothing to add (empty folder, no supported files).
+	case nothingUsable
+
+	var errorDescription: String? {
+		switch self {
+		case let .unsupportedFiles(names) where names.count == 1:
+			"Skipped “\(names[0])” — not a supported audio file."
+		case let .unsupportedFiles(names):
+			"Skipped \(names.count) files that aren't supported audio: \(names.joined(separator: ", "))."
+		case let .unreadableDropItems(count):
+			count == 1
+				? "A dropped item couldn't be read."
+				: "\(count) dropped items couldn't be read."
+		case .nothingUsable:
+			"Nothing to add — no supported audio files found."
+		}
+	}
+}
 
 @MainActor
 final class LibraryViewModel: ObservableObject {
@@ -44,6 +71,9 @@ final class LibraryViewModel: ObservableObject {
 	private let dropped: DroppedFileService
 	/// Persistence: the list + selection survive relaunch.
 	private let store: LibraryStore
+	/// Intake failures (skipped files, unreadable drops) surface here,
+	/// aggregated into one toast per user action.
+	private let toasts: ToastCenter
 
 	/// Guards against overlapping play requests (a double-click fires two row
 	/// taps): while one load is in flight, further taps are dropped.
@@ -51,10 +81,11 @@ final class LibraryViewModel: ObservableObject {
 	private var hasRestored = false
 	private var terminationObserver: NSObjectProtocol?
 
-	init(player: PlaybackCoordinator, dropped: DroppedFileService, store: LibraryStore) {
+	init(player: PlaybackCoordinator, dropped: DroppedFileService, store: LibraryStore, toasts: ToastCenter) {
 		self.player = player
 		self.dropped = dropped
 		self.store = store
+		self.toasts = toasts
 
 		// Slider tweaks are only stashed on a track switch — capture the last
 		// track's values (and everything else) once more on quit.
@@ -87,7 +118,7 @@ final class LibraryViewModel: ObservableObject {
 		if let id = snapshot.currentTrackID,
 		   let track = tracks.first(where: { $0.id == id })
 		{
-			await load(track)
+			_ = await load(track)
 		}
 	}
 
@@ -133,68 +164,111 @@ final class LibraryViewModel: ObservableObject {
 	/// The sidebar's "Import Folder" button: choose directories, expand to the
 	/// supported audio files inside.
 	func openFolder() async {
-		await intake(urls: await expand(presentOpenPanel(forFolders: true)), then: .firstIfLibraryWasEmpty)
+		let chosen = presentOpenPanel(forFolders: true)
+		let expanded = await expand(chosen)
+		await intake(
+			urls: expanded,
+			then: .firstIfLibraryWasEmpty,
+			issues: nothingUsable(in: expanded, chosenFrom: chosen)
+		)
 	}
 
 	/// Library-zone drop (the sidebar list / empty state): resolve the drag's
 	/// item providers, then insert at the drop gap. Views hand the providers
 	/// straight over — the NSItemProvider plumbing stays out of the view layer.
 	func handleLibraryDrop(providers: [NSItemProvider], at index: Int? = nil) async {
-		await addDropped(urls: dropped.urls(from: providers), at: index)
+		let drop = await dropped.urls(from: providers)
+		await addDropped(urls: drop.urls, at: index, unreadableCount: drop.unreadableCount)
 	}
 
 	/// Waveform-zone drop: resolve providers, then load the first supported
 	/// file immediately.
 	func handleWaveformDrop(providers: [NSItemProvider]) async {
-		await loadDropped(urls: dropped.urls(from: providers))
+		let drop = await dropped.urls(from: providers)
+		await loadDropped(urls: drop.urls, unreadableCount: drop.unreadableCount)
 	}
 
 	/// Library-zone drop intake (`index` = the insertion gap under the drop line).
-	func addDropped(urls: [URL], at index: Int? = nil) async {
-		await intake(urls: await expand(urls), at: index, then: .firstIfLibraryWasEmpty)
+	func addDropped(urls: [URL], at index: Int? = nil, unreadableCount: Int = 0) async {
+		var issues: [IntakeIssue] = []
+		if unreadableCount > 0 { issues.append(.unreadableDropItems(unreadableCount)) }
+		let expanded = await expand(urls)
+		issues += nothingUsable(in: expanded, chosenFrom: urls)
+		await intake(urls: expanded, at: index, then: .firstIfLibraryWasEmpty, issues: issues)
 	}
 
 	/// Waveform-zone drop intake: only the *first* supported dropped file is
-	/// added (deduped) and loaded.
-	func loadDropped(urls: [URL]) async {
-		guard let first = await expand(urls).first(where: { Track.isSupported(url: $0) })
-		else { return }
-		await intake(urls: [first], then: .firstMatching([first]))
+	/// added (deduped) and loaded. Deliberately asymmetric with the library
+	/// zone: "load this one thing" ignores any extra files in the drop, so
+	/// they aren't reported as skipped either.
+	func loadDropped(urls: [URL], unreadableCount: Int = 0) async {
+		var issues: [IntakeIssue] = []
+		if unreadableCount > 0 { issues.append(.unreadableDropItems(unreadableCount)) }
+		guard let first = await expand(urls).first(where: { Track.isSupported(url: $0) }) else {
+			if !urls.isEmpty { issues.append(.nothingUsable) }
+			toasts.report(errors: issues)
+			return
+		}
+		await intake(urls: [first], then: .firstMatching([first]), issues: issues)
+	}
+
+	/// The action produced nothing to add — but only when the user actually
+	/// chose/dropped something (a cancelled panel or empty drop stays silent).
+	private func nothingUsable(in expanded: [URL], chosenFrom original: [URL]) -> [IntakeIssue] {
+		expanded.isEmpty && !original.isEmpty ? [.nothingUsable] : []
 	}
 
 	/// The single intake path behind every import/drop variant: `add` (dedupe,
-	/// filter, metadata, insert), then the variant's follow-up load.
-	private func intake(urls: [URL], at index: Int? = nil, then followUp: FollowUp) async {
-		guard !urls.isEmpty else { return }
+	/// filter, metadata, insert), then the variant's follow-up load. All of the
+	/// action's issues — the caller's plus the files `add` skipped — surface as
+	/// **one** toast at the end.
+	private func intake(urls: [URL], at index: Int? = nil, then followUp: FollowUp, issues: [IntakeIssue] = []) async {
+		guard !urls.isEmpty else {
+			toasts.report(errors: issues)
+			return
+		}
+		var issues = issues
 		let wasEmpty = tracks.isEmpty
-		await add(urls: urls, at: index)
+		let unsupported = await add(urls: urls, at: index)
+		if !unsupported.isEmpty {
+			issues.append(.unsupportedFiles(unsupported.map { $0.lastPathComponent }))
+		}
+		toasts.report(errors: issues)
 		switch followUp {
 		case .firstIfLibraryWasEmpty:
 			if wasEmpty, let first = tracks.first {
-				await load(first)
+				_ = await load(first)
 			}
 		case let .firstMatching(candidates):
 			let chosen = Set(candidates.map { $0.standardizedFileURL })
 			if let track = tracks.first(where: { chosen.contains($0.url.standardizedFileURL) }) {
-				await load(track)
+				_ = await load(track)
 			}
 		}
 	}
 
-	/// Dedupes by standardized URL, skips non-audio files silently, reads
-	/// title + duration, then inserts at `index` (clamped) or appends when nil.
-	func add(urls: [URL], at index: Int? = nil) async {
+	/// Dedupes by standardized URL (silently — a duplicate is a no-op, not an
+	/// error), reads title + duration, then inserts at `index` (clamped) or
+	/// appends when nil. Returns the skipped non-audio URLs for the caller's toast.
+	func add(urls: [URL], at index: Int? = nil) async -> [URL] {
 		var seen = Set(tracks.map { $0.url.standardizedFileURL })
 		var added: [Track] = []
+		var unsupported: [URL] = []
 		for url in urls {
 			let standardized = url.standardizedFileURL
-			guard !seen.contains(standardized), Track.isSupported(url: url) else { continue }
+			guard !seen.contains(standardized) else { continue }
+			guard Track.isSupported(url: url) else {
+				unsupported.append(url)
+				continue
+			}
 			seen.insert(standardized)
 			added.append(await makeTrack(url: url))
 		}
-		guard !added.isEmpty else { return }
-		tracks.insert(contentsOf: added, at: min(max(index ?? tracks.count, 0), tracks.count))
-		persist()
+		if !added.isEmpty {
+			tracks.insert(contentsOf: added, at: min(max(index ?? tracks.count, 0), tracks.count))
+			persist()
+		}
+		return unsupported
 	}
 
 	/// Reorder rows (the list's reorder drag). Offsets come straight from
@@ -252,8 +326,7 @@ final class LibraryViewModel: ObservableObject {
 
 	/// Load the track into the player/waveform (no autoplay — the transport
 	/// starts playback); marks it current only if the load succeeded (e.g. a
-	/// >20-min file keeps the previous selection and shows loadError).
-	@discardableResult
+	/// >20-min file keeps the previous selection; the failure shows as a toast).
 	func load(_ track: Track) async -> Bool {
 		guard !playInFlight else { return false }
 		playInFlight = true

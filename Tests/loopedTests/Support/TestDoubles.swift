@@ -122,10 +122,13 @@ final class FakeLibraryStore: LibraryStore {
 }
 
 /// An `AudioFileService` that always rejects the load as too long — for exercising
-/// the `PlayerViewModel.loadError` path without a real 20-minute file.
+/// the load-failure toast path without a real 20-minute file.
 struct TooLongAudioFileService: AudioFileService {
-	func load(url _: URL) async throws -> LoadedAudio {
-		throw AudioFileServiceError.tooLong(maxMinutes: DefaultAudioFileService.maxDurationMinutes)
+	func load(url: URL) async throws -> LoadedAudio {
+		throw AudioFileServiceError.tooLong(
+			filename: url.lastPathComponent,
+			maxMinutes: DefaultAudioFileService.maxDurationMinutes
+		)
 	}
 }
 

@@ -15,13 +15,19 @@ import Testing
 struct LibraryViewModelTests {
 	private func makeSUT(
 		files: AudioFileService = DefaultAudioFileService(),
-		store: FakeLibraryStore = FakeLibraryStore()
+		store: FakeLibraryStore = FakeLibraryStore(),
+		toasts: ToastCenter = ToastCenter()
 	)
 		-> (library: LibraryViewModel, player: PlaybackCoordinator, playback: FakePlaybackService)
 	{
 		let playback = FakePlaybackService()
-		let player = PlaybackCoordinator(playback: playback, files: files)
-		let library = LibraryViewModel(player: player, dropped: DefaultDroppedFileService(), store: store)
+		let player = PlaybackCoordinator(playback: playback, files: files, toasts: toasts)
+		let library = LibraryViewModel(
+			player: player,
+			dropped: DefaultDroppedFileService(),
+			store: store,
+			toasts: toasts
+		)
 		return (library, player, playback)
 	}
 
@@ -31,9 +37,9 @@ struct LibraryViewModelTests {
 	{
 		let sut = makeSUT()
 		let urls = try (0 ..< count).map { _ in try AudioFixture.tempSine(seconds: 1) }
-		await sut.library.add(urls: urls)
+		_ = await sut.library.add(urls: urls)
 		let first = try #require(sut.library.tracks.first)
-		await sut.library.load(first)
+		_ = await sut.library.load(first)
 		return sut
 	}
 
@@ -43,7 +49,7 @@ struct LibraryViewModelTests {
 		let (library, _, _) = makeSUT()
 		let url = try AudioFixture.tempSine(seconds: 2)
 
-		await library.add(urls: [url])
+		_ = await library.add(urls: [url])
 
 		#expect(library.tracks.count == 1)
 		let track = try #require(library.tracks.first)
@@ -56,8 +62,8 @@ struct LibraryViewModelTests {
 		let (library, _, _) = makeSUT()
 		let url = try AudioFixture.tempSine(seconds: 1)
 
-		await library.add(urls: [url, url])
-		await library.add(urls: [url])
+		_ = await library.add(urls: [url, url])
+		_ = await library.add(urls: [url])
 
 		#expect(library.tracks.count == 1)
 	}
@@ -69,7 +75,7 @@ struct LibraryViewModelTests {
 		try "not audio".write(to: text, atomically: true, encoding: .utf8)
 		let wav = try AudioFixture.tempSine(seconds: 1)
 
-		await library.add(urls: [text, wav])
+		_ = await library.add(urls: [text, wav])
 
 		#expect(library.tracks.map(\.url) == [wav])
 	}
@@ -92,16 +98,89 @@ struct LibraryViewModelTests {
 		#expect(library.currentTrackID == library.tracks.first?.id)
 	}
 
+	// MARK: - Intake toasts
+
+	/// A throwaway non-audio file for skip/aggregation tests.
+	private func tempTextFile() throws -> URL {
+		let url = FileManager.default.temporaryDirectory
+			.appendingPathComponent("looped-fixture-\(UUID().uuidString).txt")
+		try "not audio".write(to: url, atomically: true, encoding: .utf8)
+		return url
+	}
+
+	@Test func mixedDropAddsGoodFilesAndAggregatesSkipsIntoOneToast() async throws {
+		let toasts = ToastCenter()
+		let (library, _, _) = makeSUT(toasts: toasts)
+		let text1 = try tempTextFile()
+		let text2 = try tempTextFile()
+		let wav = try AudioFixture.tempSine(seconds: 1)
+
+		await library.addDropped(urls: [text1, wav, text2])
+
+		#expect(library.tracks.map(\.url) == [wav])
+		#expect(toasts.toasts.count == 1) // one toast per action, not per file
+		let message = try #require(toasts.toasts.first?.messages.first)
+		#expect(message.contains(text1.lastPathComponent))
+		#expect(message.contains(text2.lastPathComponent))
+	}
+
+	@Test func duplicateImportsStaySilent() async throws {
+		let toasts = ToastCenter()
+		let (library, _, _) = makeSUT(toasts: toasts)
+		let wav = try AudioFixture.tempSine(seconds: 1)
+		await library.addDropped(urls: [wav])
+
+		await library.addDropped(urls: [wav]) // re-adding is a no-op, not an error
+
+		#expect(library.tracks.count == 1)
+		#expect(toasts.toasts.isEmpty)
+	}
+
+	@Test func dropYieldingNothingUsableSaysSo() async throws {
+		let toasts = ToastCenter()
+		let (library, _, _) = makeSUT(toasts: toasts)
+		let emptyFolder = FileManager.default.temporaryDirectory
+			.appendingPathComponent("looped-empty-\(UUID().uuidString)")
+		try FileManager.default.createDirectory(at: emptyFolder, withIntermediateDirectories: true)
+
+		await library.addDropped(urls: [emptyFolder])
+
+		#expect(library.tracks.isEmpty)
+		#expect(toasts.toasts.map(\.messages) == [["Nothing to add — no supported audio files found."]])
+	}
+
+	@Test func unreadableDropItemsAreReported() async {
+		let toasts = ToastCenter()
+		let (library, _, _) = makeSUT(toasts: toasts)
+
+		await library.addDropped(urls: [], unreadableCount: 2)
+
+		#expect(library.tracks.isEmpty)
+		#expect(toasts.toasts.map(\.messages) == [["2 dropped items couldn't be read."]])
+	}
+
+	@Test func waveformDropWithNoSupportedFileReportsNothingUsable() async throws {
+		let toasts = ToastCenter()
+		let (library, _, _) = makeSUT(toasts: toasts)
+		let text = try tempTextFile()
+
+		await library.loadDropped(urls: [text])
+
+		#expect(library.tracks.isEmpty)
+		#expect(library.currentTrackID == nil)
+		#expect(toasts.toasts.map(\.messages) == [["Nothing to add — no supported audio files found."]])
+	}
+
 	// MARK: - insert / move / waveform drop
 
 	@Test func addAtIndexInsertsBetweenExistingRows() async throws {
 		let (library, _, _) = makeSUT()
 		let first = try AudioFixture.tempSine(seconds: 1)
 		let second = try AudioFixture.tempSine(seconds: 1)
-		await library.add(urls: [first, second])
+		_ = await library.add(urls: [first, second])
 		let inserted = try AudioFixture.tempSine(seconds: 1)
 
-		await library.add(urls: [inserted], at: 1)
+		_ = await library.add(urls: [inserted], at: 1)
 
 		#expect(library.tracks.map(\.url) == [first, inserted, second])
 	}
@@ -109,10 +188,10 @@ struct LibraryViewModelTests {
 	@Test func addClampsAnOutOfRangeInsertionIndex() async throws {
 		let (library, _, _) = makeSUT()
 		let existing = try AudioFixture.tempSine(seconds: 1)
-		await library.add(urls: [existing])
+		_ = await library.add(urls: [existing])
 		let appended = try AudioFixture.tempSine(seconds: 1)
 
-		await library.add(urls: [appended], at: 99)
+		_ = await library.add(urls: [appended], at: 99)
 
 		#expect(library.tracks.map(\.url) == [existing, appended])
 	}
@@ -122,7 +201,7 @@ struct LibraryViewModelTests {
 		let a = try AudioFixture.tempSine(seconds: 1)
 		let b = try AudioFixture.tempSine(seconds: 1)
 		let c = try AudioFixture.tempSine(seconds: 1)
-		await library.add(urls: [a, b, c])
+		_ = await library.add(urls: [a, b, c])
 
 		library.move(fromOffsets: [0], toOffset: 3)
 
@@ -147,7 +226,7 @@ struct LibraryViewModelTests {
 	@Test func loadDroppedReusesAnExistingLibraryEntry() async throws {
 		let (library, _, _) = makeSUT()
 		let wav = try AudioFixture.tempSine(seconds: 1)
-		await library.add(urls: [wav])
+		_ = await library.add(urls: [wav])
 		let existing = try #require(library.tracks.first)
 
 		await library.loadDropped(urls: [wav])
@@ -161,10 +240,10 @@ struct LibraryViewModelTests {
 	@Test func loadSetsCurrentTrackWithoutStartingPlayback() async throws {
 		let (library, player, playback) = makeSUT()
 		let url = try AudioFixture.tempSine(seconds: 1)
-		await library.add(urls: [url])
+		_ = await library.add(urls: [url])
 		let track = try #require(library.tracks.first)
 
-		await library.load(track)
+		_ = await library.load(track)
 
 		#expect(library.currentTrackID == track.id)
 		#expect(player.currentURL == url)
@@ -178,12 +257,12 @@ struct LibraryViewModelTests {
 		// first load is in flight (interleaved setSource calls crashed the engine).
 		let (library, _, playback) = makeSUT(files: SlowAudioFileService(delay: .milliseconds(80)))
 		let url = try AudioFixture.tempSine(seconds: 1)
-		await library.add(urls: [url])
+		_ = await library.add(urls: [url])
 		let track = try #require(library.tracks.first)
 
-		let first = Task { await library.load(track) }
+		let first = Task { _ = await library.load(track) }
 		try await Task.sleep(for: .milliseconds(20))
-		let second = Task { await library.load(track) }
+		let second = Task { _ = await library.load(track) }
 		await first.value
 		await second.value
 
@@ -191,23 +270,26 @@ struct LibraryViewModelTests {
 		#expect(library.currentTrackID == track.id)
 	}
 
-	@Test func failedLoadKeepsCurrentTrackUnset() async throws {
-		let (library, player, _) = makeSUT(files: TooLongAudioFileService())
+	@Test func failedLoadKeepsCurrentTrackUnsetAndShowsAToast() async throws {
+		let toasts = ToastCenter()
+		let (library, _, _) = makeSUT(files: TooLongAudioFileService(), toasts: toasts)
 		let track = try Track(id: UUID(), url: AudioFixture.tempSine(seconds: 1), title: "t", duration: 1)
 
-		await library.load(track)
+		let loaded = await library.load(track)
 
+		#expect(!loaded)
 		#expect(library.currentTrackID == nil)
-		#expect(player.loadError != nil)
+		#expect(toasts.toasts.count == 1)
+		#expect(toasts.toasts.first?.messages.first?.contains(track.url.lastPathComponent) == true)
 	}
 
 	@Test func loadPublishesTheLoadingFlagWhileInFlight() async throws {
 		let (library, player, _) = makeSUT(files: SlowAudioFileService(delay: .milliseconds(80)))
 		let url = try AudioFixture.tempSine(seconds: 1)
-		await library.add(urls: [url])
+		_ = await library.add(urls: [url])
 		let track = try #require(library.tracks.first)
 
-		let load = Task { await library.load(track) }
+		let load = Task { _ = await library.load(track) }
 		try await Task.sleep(for: .milliseconds(20))
 		#expect(player.isLoadingTrack)
 		await load.value
@@ -283,10 +365,10 @@ struct LibraryViewModelTests {
 		// ⌫ during the decode of a double-clicked row: the finishing load must
 		// not mark the removed track current (or leave its source playing).
 		let (library, player, _) = makeSUT(files: SlowAudioFileService(delay: .milliseconds(80)))
-		try await library.add(urls: [AudioFixture.tempSine(seconds: 1)])
+		_ = try await library.add(urls: [AudioFixture.tempSine(seconds: 1)])
 		let track = try #require(library.tracks.first)
 
-		let load = Task { await library.load(track) }
+		let load = Task { _ = await library.load(track) }
 		try await Task.sleep(for: .milliseconds(20))
 		library.remove(id: track.id)
 		await load.value
@@ -300,7 +382,7 @@ struct LibraryViewModelTests {
 		let (library, _, _) = makeSUT(store: store)
 		let a = try AudioFixture.tempSine(seconds: 1)
 		let b = try AudioFixture.tempSine(seconds: 1)
-		await library.add(urls: [a, b])
+		_ = await library.add(urls: [a, b])
 
 		try library.remove(id: #require(library.tracks.first).id)
 
@@ -381,7 +463,7 @@ struct LibraryViewModelTests {
 		playback.fakeCurrentTime = 10
 		player.tick()
 
-		await library.load(library.tracks[1])
+		_ = await library.load(library.tracks[1])
 
 		await library.previous()
 		#expect(library.currentTrackID == library.tracks[0].id)
@@ -450,7 +532,7 @@ struct LibraryViewModelTests {
 		let a = try AudioFixture.tempSine(seconds: 1)
 		let b = try AudioFixture.tempSine(seconds: 1)
 
-		await library.add(urls: [a, b])
+		_ = await library.add(urls: [a, b])
 		#expect(store.saved?.tracks.map(\.url) == [a, b])
 
 		library.move(fromOffsets: [0], toOffset: 2)
@@ -460,10 +542,10 @@ struct LibraryViewModelTests {
 	@Test func loadSavesTheNewSelection() async throws {
 		let store = FakeLibraryStore()
 		let (library, _, _) = makeSUT(store: store)
-		try await library.add(urls: [AudioFixture.tempSine(seconds: 1)])
+		_ = try await library.add(urls: [AudioFixture.tempSine(seconds: 1)])
 		let track = try #require(library.tracks.first)
 
-		await library.load(track)
+		_ = await library.load(track)
 
 		#expect(store.saved?.currentTrackID == track.id)
 	}
@@ -475,17 +557,17 @@ struct LibraryViewModelTests {
 		var live = TrackParameters()
 		library.captureParameters = { live }
 		library.applyParameters = { live = $0 }
-		try await library.add(urls: [AudioFixture.tempSine(seconds: 1), AudioFixture.tempSine(seconds: 1)])
-		await library.load(library.tracks[0])
+		_ = try await library.add(urls: [AudioFixture.tempSine(seconds: 1), AudioFixture.tempSine(seconds: 1)])
+		_ = await library.load(library.tracks[0])
 
 		live = tweaked // the user moves sliders on track 0…
-		await library.load(library.tracks[1]) // …then switches away
+		_ = await library.load(library.tracks[1]) // …then switches away
 
 		#expect(library.tracks[0].parameters == tweaked) // stashed
 		#expect(live == TrackParameters()) // track 1 starts at defaults
 		#expect(store.saved?.tracks.first?.parameters == tweaked) // persisted
 
-		await library.load(library.tracks[0]) // and back
+		_ = await library.load(library.tracks[0]) // and back
 		#expect(live == tweaked) // restored
 	}
 

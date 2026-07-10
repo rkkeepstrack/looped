@@ -21,8 +21,6 @@ final class PlaybackCoordinator: ObservableObject {
 	@Published var currentTime: TimeInterval = 0
 	@Published private(set) var duration: TimeInterval?
 	@Published private(set) var currentURL: URL?
-	/// Non-nil when the last load failed (e.g. file too long).
-	@Published private(set) var loadError: String?
 	/// True while a file decode is in flight — the waveform shows a spinner.
 	@Published private(set) var isLoadingTrack = false
 
@@ -43,33 +41,37 @@ final class PlaybackCoordinator: ObservableObject {
 
 	private let playback: PlaybackService
 	private let files: AudioFileService
+	/// Load failures surface here as toasts (the single error channel).
+	private let toasts: ToastCenter
 
 	private var timer: Timer?
 
-	init(playback: PlaybackService, files: AudioFileService) {
+	init(playback: PlaybackService, files: AudioFileService, toasts: ToastCenter) {
 		self.playback = playback
 		self.files = files
+		self.toasts = toasts
 	}
 
 	// MARK: - Loading
 
 	/// Decode `url` and make it the current source; returns whether the load
 	/// succeeded (callers like the library only move their selection on success).
-	@discardableResult
 	func load(url: URL) async -> Bool {
 		await MainActor.run { self.isLoadingTrack = true }
 		do {
 			let loaded = try await files.load(url: url)
 			await MainActor.run {
-				self.loadError = nil
 				self.apply(loaded)
 				self.isLoadingTrack = false
 			}
 			return true
 		} catch {
-			let message = (error as? LocalizedError)?.errorDescription ?? "Could not load file."
+			// The service's own errors carry the filename; wrap anything else
+			// (e.g. AVAudioFile's opaque open failures) so the toast names the file.
+			let message = (error as? AudioFileServiceError)?.errorDescription
+				?? "Couldn't load “\(url.lastPathComponent)”."
 			await MainActor.run {
-				self.loadError = message
+				self.toasts.report(messages: [message])
 				self.isLoadingTrack = false
 			}
 			return false
@@ -93,7 +95,6 @@ final class PlaybackCoordinator: ObservableObject {
 	/// Drop the current source (the loaded track was removed from the library).
 	/// Fires `onSourceChanged` so dependents reset per-track state (loop points).
 	func unload() {
-		loadError = nil // clear a stale error even when the failed load left no source
 		guard loaded != nil else { return }
 		playback.stop()
 		loaded = nil
