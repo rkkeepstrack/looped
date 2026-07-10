@@ -14,13 +14,19 @@ struct SidebarView: View {
 
 	var body: some View {
 		VStack(alignment: .leading, spacing: 14) {
-			Button {
-				Task { await library.openFiles() }
-			} label: {
-				Label("Import Files", systemImage: "square.and.arrow.down")
-					.frame(maxWidth: .infinity)
+			HStack(spacing: 8) {
+				Button {
+					Task { await library.openFiles() }
+				} label: {
+					Label("Import Files", systemImage: "square.and.arrow.down")
+						.frame(maxWidth: .infinity)
+				}
+				.buttonStyle(.bordered)
+
+				// End-of-track mode; sidebar-hosted until plan 07 moves it to
+				// the transport cluster.
+				PlaythroughModeButton()
 			}
-			.buttonStyle(.bordered)
 			.controlSize(.large)
 
 			if library.tracks.isEmpty {

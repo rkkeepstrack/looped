@@ -26,6 +26,9 @@ final class PlayerViewModel: ObservableObject {
 	@Published var syncPitchAndRate = false
 	@Published var loopStart: (TimeInterval?, AVAudioFramePosition?) = (nil, nil)
 	@Published var loopEnd: (TimeInterval?, AVAudioFramePosition?) = (nil, nil)
+	/// What happens at end of track. Session-only for now — persistence lands
+	/// with the library store (plan 06).
+	@Published var playthroughMode: PlaythroughMode = .advance
 
 	// MARK: Transport projection (state lives in the coordinator)
 
@@ -60,6 +63,12 @@ final class PlayerViewModel: ObservableObject {
 		set { transport.currentTime = newValue }
 	}
 
+	// MARK: Wiring (set at the composition root)
+
+	/// Fired when the track ends in advance mode — the library plays the next
+	/// track. Kept a callback so this VM never references the library VM.
+	var onAdvanceToNextTrack: (() -> Void)?
+
 	// MARK: Injected store + services
 
 	private let transport: PlaybackCoordinator
@@ -81,6 +90,11 @@ final class PlayerViewModel: ObservableObject {
 		transport.onSourceChanged = { [weak self] in
 			self?.loopStart = (nil, nil)
 			self?.loopEnd = (nil, nil)
+		}
+		// End-of-track policy (the playthrough mode) is an intent-layer decision,
+		// so the coordinator's callback lands here, not in the library VM.
+		transport.onTrackEnded = { [weak self] in
+			self?.trackEnded()
 		}
 	}
 
@@ -109,6 +123,25 @@ final class PlayerViewModel: ObservableObject {
 
 	func stop() {
 		transport.stop()
+	}
+
+	func cyclePlaythroughMode() {
+		playthroughMode = playthroughMode.next
+	}
+
+	/// End-of-track policy (wired to `PlaybackCoordinator.onTrackEnded`). The
+	/// coordinator has already stopped — playhead at 0 — so stop mode is done,
+	/// loop mode just plays again, and advance mode defers to the library.
+	/// Never fires while an A/B loop is armed (a looping track doesn't "end").
+	func trackEnded() {
+		switch playthroughMode {
+		case .loop:
+			transport.play()
+		case .advance:
+			onAdvanceToNextTrack?()
+		case .stop:
+			break
+		}
 	}
 
 	/// Seek to `time`; returns `true` if it actually seeked. Returns `false` (a no-op)

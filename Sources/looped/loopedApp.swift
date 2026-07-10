@@ -15,6 +15,11 @@ struct loopedApp: App {
 	@StateObject private var waveform = WaveformViewModel(service: DefaultWaveformService())
 
 	init() {
+		// `.help` tooltips ride NSToolTip, whose initial delay is an app-wide
+		// user default (milliseconds) — the system's is too slow for hint-bearing
+		// controls like the playthrough-mode button. `register` doesn't persist.
+		UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 500])
+
 		let playback = AVPlaybackService()
 		let transport = PlaybackCoordinator(
 			playback: playback,
@@ -29,9 +34,10 @@ struct loopedApp: App {
 			player: transport,
 			dropped: DefaultDroppedFileService()
 		)
-		// End-of-track → the library picks and plays the next track (auto-advance).
-		// Weak: the coordinator must not retain the library that retains it.
-		transport.onTrackEnded = { [weak library] in
+		// Advance mode: end-of-track → the library picks and plays the next track.
+		// (The mode branching itself lives in PlayerViewModel.trackEnded.)
+		// Weak: the player must not retain the library.
+		player.onAdvanceToNextTrack = { [weak library] in
 			Task { await library?.trackEnded() }
 		}
 		_player = StateObject(wrappedValue: player)
