@@ -91,7 +91,7 @@ struct ContentView: View {
 			Divider()
 			waveformDropZone
 			Divider()
-			TrackOverviewView()
+			MinimapView()
 			Divider()
 			ControlsView()
 		}

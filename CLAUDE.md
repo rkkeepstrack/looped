@@ -116,7 +116,7 @@ One line per file; the *why* behind non-obvious designs lives in the next sectio
 | `Views/TrackListView.swift` | Hand-rolled track list (+ private `TrackRow`, drop delegate): themed selection, drag-reorder, insertion indicator. |
 | `Views/ControlsView.swift` | Bottom bar: volume/rate/pitch sliders + sync checkbox, transport (prev/play/next/stop), A/B `LoopPanel` with nudge arrows. |
 | `Views/WaveformView.swift` | `WaveformDisplayView`: windowed two-layer waveform render, scrub highlight, A/B markers, center playhead. |
-| `Views/TrackOverviewView.swift` | Full-track minimap strip: whole-song envelope, viewport highlight box (drag = scrub, outside click = seek), loop tint. |
+| `Views/MinimapView.swift` | Full-track minimap strip: whole-song envelope, viewport highlight box (drag = scrub, outside click = seek), loop tint. |
 | `Views/SyncWaveformCanvas.swift` | Synchronous DSWaveformImage canvas shared by the main waveform and the minimap. |
 | `Views/Theme.swift` | Design tokens: palette, waveform colors, layout metrics. |
 | `Views/ScrollObserverView.swift` | `NSViewRepresentable`: scroll-wheel + mouse-drag capture → `WaveformViewModel`. |

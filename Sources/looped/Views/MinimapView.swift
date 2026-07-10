@@ -1,5 +1,5 @@
 //
-//  TrackOverviewView.swift
+//  MinimapView.swift
 //  looped
 //
 //  Full-track waveform preview (minimap, plans/04): a fixed-height strip under the
@@ -15,7 +15,7 @@ import AppKit
 import DSWaveformImage
 import SwiftUI
 
-struct TrackOverviewView: View {
+struct MinimapView: View {
 	@EnvironmentObject var audioPlayer: PlayerViewModel
 	@EnvironmentObject var offsetCalculator: WaveformViewModel
 
@@ -87,7 +87,7 @@ struct TrackOverviewView: View {
 				RoundedRectangle(cornerRadius: 4)
 					.fill(Theme.overviewBoxFill)
 					.overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Theme.overviewBoxStroke, lineWidth: 1))
-					.frame(width: max(4, box.width), height: height - 4)
+					.frame(width: max(MinimapHelpers.minBoxWidth, box.width), height: height - 4)
 					.offset(x: box.x)
 			}
 			.frame(width: width, height: height)
@@ -124,7 +124,7 @@ struct TrackOverviewView: View {
 				case .idle:
 					let mapper = OverviewMapper(stripWidth: width, duration: duration)
 					let box = box(mapper: mapper, time: audioPlayer.livePlaybackTime())
-					if value.startLocation.x >= box.x, value.startLocation.x <= box.x + max(4, box.width) {
+					if MinimapHelpers.boxContains(box: box, x: value.startLocation.x) {
 						dragMode = .scrubbing(lastX: value.startLocation.x)
 					} else {
 						dragMode = .pending(startX: value.startLocation.x)
@@ -173,7 +173,7 @@ struct TrackOverviewView: View {
 			}
 	}
 
-	// MARK: - Helpers
+	// MARK: - View-state helpers (read the view-models / @State)
 
 	private func box(mapper: OverviewMapper, time: TimeInterval) -> (x: CGFloat, width: CGFloat) {
 		let visibleSeconds = TimeInterval(offsetCalculator.waveformWidth / offsetCalculator.pixelsPerSecond)
@@ -184,12 +184,30 @@ struct TrackOverviewView: View {
 		overview = offsetCalculator.overviewSamples(targetCount: Int(width * offsetCalculator.sampleScale))
 	}
 
+	private func configuration(color: Color) -> Waveform.Configuration {
+		MinimapHelpers.configuration(color: color, scale: offsetCalculator.sampleScale)
+	}
+}
+
+// MARK: - Stateless helpers
+
+/// Pure minimap helpers namespaced in a caseless enum — no view/view-model state,
+/// everything in via parameters.
+private enum MinimapHelpers {
+	/// Minimum rendered (and hit-testable) width of the highlight box, so it stays
+	/// grabbable when the visible window shrinks at the song edges.
+	static let minBoxWidth: CGFloat = 4
+
+	static func boxContains(box: (x: CGFloat, width: CGFloat), x: CGFloat) -> Bool {
+		x >= box.x && x <= box.x + max(minBoxWidth, box.width)
+	}
+
 	/// Filled envelope (unlike the big view's stripes) — denser reads better at
 	/// strip height.
-	private func configuration(color: Color) -> Waveform.Configuration {
+	static func configuration(color: Color, scale: CGFloat) -> Waveform.Configuration {
 		Waveform.Configuration(
 			style: .filled(NSColor(color)),
-			scale: offsetCalculator.sampleScale,
+			scale: scale,
 			verticalScalingFactor: 0.9,
 			shouldAntialias: true
 		)
