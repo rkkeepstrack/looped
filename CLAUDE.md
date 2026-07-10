@@ -208,13 +208,17 @@ One line per file; the *why* behind non-obvious designs lives in the next sectio
   pins its outer stack to the *live* geometry width (GeometryReader aligns top-leading; sized to
   the chunk, the playhead would track the stale stored width and snap on commit). The minimap
   debounces its overview re-downsample the same way — the stale envelope stretches with the
-  frame; recomputing per frame shimmers. The whole strip (envelope, played mask, box, loop
+  frame; recomputing per frame shimmers. The strip (envelope, played mask, loop
   marks) is laid out in the *settled* width's coordinates and mapped onto the live width by one
   leading-anchored `scaleEffect` — its TimelineView re-evaluates mid-animation and would reset
   an in-flight layout tween (content snaps while the container still tweens), whereas a
   render-only scale rides the animated transaction untouched; all strip x-positions are linear
   in width, so the scaled geometry is exact and the post-refresh swap to scale 1 is
-  pixel-identical.
+  pixel-identical. The viewport *box* is the exception: its width tracks the waveform viewport,
+  which changes by the full sidebar delta — a change the strip scale (old strip → new strip)
+  can't express — so it draws in a separate layer in **live** coordinates; strip and waveform
+  share the column width, making the live geometry width the honest visible window at every
+  animation frame (the stored `waveformWidth` steps discretely and would pop the box).
 - **Minimap (full-track overview)**: box-drag is a scrub (it feeds the same `WaveformViewModel`
   scroll-offset/anchor machinery, converted from strip pixels) and the release **seeks** to the
   dropped position — identical semantics to the big waveform's scrub, incl. snap-back when the

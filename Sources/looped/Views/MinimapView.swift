@@ -62,6 +62,14 @@ struct MinimapView: View {
 							y: 1,
 							anchor: .leading
 						)
+					// The visible-window box lives OUTSIDE the scaled layer, in live
+					// coordinates: its width tracks the waveform viewport, which
+					// changes by the sidebar delta — a change the strip scale (old
+					// strip → new strip) cannot express, so inside the scaled layer
+					// it snaps between sizes. Out here every input is linear in the
+					// live geometry width, which tweens with the sidebar animation,
+					// so the box compresses/stretches smoothly for free.
+					boxLayer(width: geo.size.width, height: geo.size.height, duration: duration)
 				}
 			}
 			.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -108,16 +116,22 @@ struct MinimapView: View {
 				}
 
 				loopOverlay(mapper: mapper, height: height)
-
-				// The visible-window highlight box.
-				let box = box(mapper: mapper, time: time)
-				RoundedRectangle(cornerRadius: 4)
-					.fill(Theme.overviewBoxFill)
-					.overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Theme.overviewBoxStroke, lineWidth: 1))
-					.frame(width: max(MinimapHelpers.minBoxWidth, box.width), height: height - 4)
-					.offset(x: box.x)
 			}
 			.frame(width: width, height: height)
+		}
+	}
+
+	/// The visible-window highlight box, drawn in live coordinates (see the call
+	/// site for why it can't ride the strip's settled-width scale).
+	private func boxLayer(width: CGFloat, height: CGFloat, duration: TimeInterval) -> some View {
+		TimelineView(.animation(minimumInterval: nil, paused: !audioPlayer.isPlaying)) { _ in
+			let mapper = OverviewMapper(stripWidth: width, duration: duration)
+			let box = box(stripWidth: width, mapper: mapper, time: audioPlayer.livePlaybackTime())
+			RoundedRectangle(cornerRadius: 4)
+				.fill(Theme.overviewBoxFill)
+				.overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Theme.overviewBoxStroke, lineWidth: 1))
+				.frame(width: max(MinimapHelpers.minBoxWidth, box.width), height: height - 4)
+				.offset(x: box.x)
 		}
 	}
 
@@ -155,7 +169,7 @@ struct MinimapView: View {
 				switch dragMode {
 				case .idle:
 					let mapper = OverviewMapper(stripWidth: width, duration: duration)
-					let box = box(mapper: mapper, time: audioPlayer.livePlaybackTime())
+					let box = box(stripWidth: width, mapper: mapper, time: audioPlayer.livePlaybackTime())
 					if MinimapHelpers.boxContains(box: box, x: value.startLocation.x) {
 						dragMode = .scrubbing(lastX: value.startLocation.x)
 					} else {
@@ -208,8 +222,13 @@ struct MinimapView: View {
 
 	// MARK: - View-state helpers (read the view-models / @State)
 
-	private func box(mapper: OverviewMapper, time: TimeInterval) -> (x: CGFloat, width: CGFloat) {
-		let visibleSeconds = TimeInterval(offsetCalculator.waveformWidth / offsetCalculator.pixelsPerSecond)
+	/// Box geometry from the live strip width alone: the strip and the waveform
+	/// share the column, so the strip width IS the visible waveform width — during
+	/// the sidebar tween the waveform's oversized chunk is clipped to exactly this
+	/// width, making it the honest visible window at every animation frame (the
+	/// stored `waveformWidth` steps discretely and would pop the box).
+	private func box(stripWidth: CGFloat, mapper: OverviewMapper, time: TimeInterval) -> (x: CGFloat, width: CGFloat) {
+		let visibleSeconds = TimeInterval(stripWidth / offsetCalculator.pixelsPerSecond)
 		return mapper.box(centerTime: offsetCalculator.centerTime(playbackTime: time), visibleSeconds: visibleSeconds)
 	}
 
