@@ -3,7 +3,7 @@
 //  looped
 //
 //  The audio "player": owns the AVAudioEngine graph
-//  (AVAudioPlayerNode → AVAudioUnitTimePitch → mainMixerNode) and the transport
+//  (player → timePitch → varispeed → eq → limiter → mainMixer) and the transport
 //  (play/pause/stop/seek), loop scheduling, and the playback clock. No SwiftUI,
 //  no @Published — it's a plain service the view-model drives and can be mocked.
 //
@@ -37,6 +37,8 @@ protocol PlaybackService: AnyObject {
 	/// Tape-style speed: tempo + pitch together via plain resampling (varispeed
 	/// unit; artifact-free) — used by the synced pitch/rate mode.
 	func setVarispeed(_ rate: Float)
+	/// Linear gain 0…2: ≤ 1 attenuates the player node, > 1 boosts via the EQ's
+	/// global gain (capped at +6 dB); a peak limiter downstream catches clipping.
 	func setVolume(_ volume: Float)
 }
 
@@ -45,6 +47,16 @@ final class AVPlaybackService: PlaybackService {
 	private let player = AVAudioPlayerNode()
 	private let timePitch = AVAudioUnitTimePitch()
 	private let varispeed = AVAudioUnitVarispeed()
+	/// Volume headroom: `globalGain` carries the boost above 1× (no bands used).
+	private let eq = AVAudioUnitEQ(numberOfBands: 0)
+	/// Apple's PeakLimiter — keeps the boosted signal from clipping.
+	private let limiter = AVAudioUnitEffect(audioComponentDescription: AudioComponentDescription(
+		componentType: kAudioUnitType_Effect,
+		componentSubType: kAudioUnitSubType_PeakLimiter,
+		componentManufacturer: kAudioUnitManufacturer_Apple,
+		componentFlags: 0,
+		componentFlagsMask: 0
+	))
 
 	private var file: AVAudioFile?
 	private var isScheduled = false
@@ -70,16 +82,21 @@ final class AVPlaybackService: PlaybackService {
 		engine.attach(player)
 		engine.attach(timePitch)
 		engine.attach(varispeed)
+		engine.attach(eq)
+		engine.attach(limiter)
 		connectGraph(format: nil)
 		do { try engine.start() } catch { print("Engine failed: \(error)") }
 	}
 
-	/// `player → timePitch → varispeed → mainMixer`. Both effect units stay in the
-	/// graph permanently; the inactive one is kept neutral (rate 1 / pitch 0).
+	/// `player → timePitch → varispeed → eq → limiter → mainMixer`. All units stay
+	/// in the graph permanently; the inactive effect is kept neutral (rate 1 /
+	/// pitch 0 / gain 0), the limiter only acts when the boosted signal peaks.
 	private func connectGraph(format: AVAudioFormat?) {
 		engine.connect(player, to: timePitch, format: format)
 		engine.connect(timePitch, to: varispeed, format: format)
-		engine.connect(varispeed, to: engine.mainMixerNode, format: format)
+		engine.connect(varispeed, to: eq, format: format)
+		engine.connect(eq, to: limiter, format: format)
+		engine.connect(limiter, to: engine.mainMixerNode, format: format)
 	}
 
 	// MARK: - Source
@@ -268,6 +285,9 @@ final class AVPlaybackService: PlaybackService {
 	}
 
 	func setVolume(_ volume: Float) {
-		player.volume = volume
+		// Split the linear 0…2 gain: the player node attenuates (its volume is a
+		// 0…1 mix gain), the EQ's global gain boosts — capped at +6 dB (2×).
+		player.volume = min(volume, 1)
+		eq.globalGain = volume > 1 ? min(20 * log10(volume), 6) : 0
 	}
 }

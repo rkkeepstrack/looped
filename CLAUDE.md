@@ -89,7 +89,7 @@ library↔playback bridge; no VM→VM reference):
 **Services** (plain, protocol-backed, no SwiftUI; `Default…`/`AV…` naming):
 
 - **`PlaybackService`** / `AVPlaybackService` — the audio player: engine graph
-  (`player → timePitch → varispeed → mixer`), transport, loop scheduling, wall-clock-smoothed
+  (`player → timePitch → varispeed → eq → limiter → mixer`), transport, loop scheduling, wall-clock-smoothed
   playback clock.
 - **`AudioFileService`** — async URL → `LoadedAudio` decode; rejects tracks > 20 min
   (`AudioFileServiceError.tooLong` → `PlayerViewModel.loadError`).
@@ -157,6 +157,10 @@ One line per file; the *why* behind non-obvious designs lives in the next sectio
   stays inside the loop: seeks within [A, B] move the loop phase (`seekInLoop` schedules the
   iteration's tail once, then the loop again; a phase offset keeps the folded clock aligned),
   seeks outside snap back; seeks are clamped to file bounds (out-of-range seeks crashed the player).
+- **Volume headroom**: the slider runs 0…2×. Gain ≤ 1 attenuates via `player.volume` (a 0…1 mix
+  gain — values above 1 aren't reliable there), the boost above 1 goes through the EQ node's
+  `globalGain` in dB (capped +6). Apple's PeakLimiter sits after the EQ so a boosted
+  near-full-scale source limits instead of clipping.
 - **Engine rewires stop the engine first** (`setSource`): reconnecting a running engine races the
   render thread and crashes on the second track. Overlapping load requests are dropped in
   `LibraryViewModel.load` (a double-click fires two taps) for the same reason.

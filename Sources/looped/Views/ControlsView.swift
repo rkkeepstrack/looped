@@ -46,8 +46,10 @@ struct ControlsView: View {
 
 	// MARK: Sliders — volume + the rate/pitch pair with the sync link
 
+	/// Range 0…2: above 100 % the engine boosts (up to +6 dB) with a peak
+	/// limiter guarding against clipping — headroom for quiet material.
 	private var volumeSlider: some View {
-		CompactSlider(label: "Volume", value: volumeBinding, defaultValue: 1.0, format: { v in
+		CompactSlider(label: "Volume", value: volumeBinding, range: 0 ... 2, defaultValue: 1.0, format: { v in
 			"\(Int((v * 100).rounded())) %"
 		}) { _ in
 			audioPlayer.updateVolume()
