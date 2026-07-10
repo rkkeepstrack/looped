@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Looped — audio looper for macOS</title>
+<meta name="description" content="A minimal macOS audio looper: waveform, seamless A/B loops, speed and pitch control.">
+<link rel="icon" href="icon.svg">
+<style>
+	:root {
+		--bg: #16130f;
+		--panel: #201c16;
+		--text: #e8e0d2;
+		--dim: #9c9284;
+		--accent: #e6a23c;
+	}
+	* { margin: 0; box-sizing: border-box; }
+	body {
+		background: var(--bg);
+		color: var(--text);
+		font: 17px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+		display: flex;
+		min-height: 100vh;
+		align-items: center;
+		justify-content: center;
+		padding: 2rem;
+	}
+	main { max-width: 34rem; text-align: center; }
+	img.icon { width: 128px; height: 128px; }
+	h1 { font-size: 2.2rem; margin: 0.5rem 0 0.25rem; letter-spacing: 0.02em; }
+	p.tag { color: var(--dim); margin-bottom: 2rem; }
+	a.button {
+		display: inline-block;
+		background: var(--accent);
+		color: #1a1206;
+		font-weight: 600;
+		text-decoration: none;
+		padding: 0.7rem 1.6rem;
+		border-radius: 10px;
+	}
+	a.button:hover { filter: brightness(1.1); }
+	section {
+		background: var(--panel);
+		border-radius: 12px;
+		padding: 1rem 1.25rem;
+		margin-top: 2rem;
+		text-align: left;
+	}
+	section h2 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--dim); margin-bottom: 0.5rem; }
+	pre { overflow-x: auto; font-size: 0.85rem; line-height: 1.7; }
+	code { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+	p.note { color: var(--dim); font-size: 0.85rem; margin-top: 1.5rem; }
+	a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+	<img class="icon" src="icon.svg" alt="Looped app icon">
+	<h1>Looped</h1>
+	<p class="tag">Audio looper for macOS — waveform, seamless A/B loops, speed &amp; pitch control.</p>
+
+	<a class="button" href="https://github.com/rkkeepstrack/looped/releases/latest">Download for macOS</a>
+
+	<section>
+		<h2>Or install with Homebrew</h2>
+		<pre><code>brew tap rkkeepstrack/looped https://github.com/rkkeepstrack/looped.git
+brew install --cask --no-quarantine looped</code></pre>
+	</section>
+
+	<p class="note">
+		Requires macOS 15+. Looped isn’t notarized, so a plain download needs
+		<code>xattr -dr com.apple.quarantine</code> on the app (Homebrew’s
+		<code>--no-quarantine</code> does this for you).
+		Source on <a href="https://github.com/rkkeepstrack/looped">GitHub</a>.
+	</p>
+</main>
+</body>
+</html>

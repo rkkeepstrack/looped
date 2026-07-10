@@ -3,6 +3,20 @@
 A macOS SwiftUI audio-looping app: load a track (WAV/MP3/AIFF), scrub an interactive
 waveform, set A/B loop points, and play back with adjustable speed and volume.
 
+## Install (users)
+
+Download `Looped-<version>.zip` from the [latest release](https://github.com/rkkeepstrack/looped/releases/latest)
+(also linked from the [website](https://rkkeepstrack.github.io/looped/)), or use Homebrew:
+
+```bash
+brew tap rkkeepstrack/looped https://github.com/rkkeepstrack/looped.git
+brew install --cask --no-quarantine looped
+```
+
+The app is not notarized (no Apple Developer account), so macOS quarantines a plain
+download: `--no-quarantine` avoids that, or clear it manually with
+`xattr -dr com.apple.quarantine /Applications/Looped.app`. Requires macOS 15+.
+
 ## Prerequisites
 
 - **macOS 15+** with the **Command Line Tools** (`xcode-select --install`). That's the only
