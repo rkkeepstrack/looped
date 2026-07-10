@@ -61,8 +61,13 @@ private struct KeyboardHandler: NSViewRepresentable {
 			audioPlayer.clearLoopPoints()
 		// Backspace (⌫, 0x7F) and forward delete (⌦, NSDeleteFunctionKey).
 		case "\u{7F}", "\u{F728}":
-			guard library.selectedTrackID != nil else { return false }
-			MainActor.assumeIsolated { library.removeSelected() }
+			// Local NSEvent monitors fire on the main thread; the library VM is
+			// main-actor-bound.
+			return MainActor.assumeIsolated {
+				guard library.selectedTrackID != nil else { return false }
+				library.removeSelected()
+				return true
+			}
 		default:
 			return false
 		}

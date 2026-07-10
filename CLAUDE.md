@@ -75,10 +75,12 @@ library↔playback bridge; no VM→VM reference):
   library) — and the end-of-track policy: `playthroughMode` (loop / advance / stop, persisted in
   `UserDefaults`) branched in `trackEnded()`; advance defers to the library via the
   `onAdvanceToNextTrack` callback.
-- **`LibraryViewModel`** — the track library: import panels (files / folder / open-and-load),
-  drag & drop intents
-  (`handleLibraryDrop(providers:at:)`, `handleWaveformDrop(providers:)`), `add(urls:at:)` as the
-  single intake (dedupe + `Track.isSupported` filter + `AVURLAsset` metadata, no decode),
+- **`LibraryViewModel`** — the track library (`@MainActor`-bound — published state and the
+  in-flight guards live on the main actor; only the folder walk detaches): import panels
+  (files / folder / open-and-load) and drag & drop intents
+  (`handleLibraryDrop(providers:at:)`, `handleWaveformDrop(providers:)`), all funneled through
+  one private `intake(urls:at:then:)` (a `FollowUp` enum picks what loads afterwards) into
+  `add(urls:at:)` (dedupe + `Track.isSupported` filter + `AVURLAsset` metadata, no decode),
   `move` (reorder), `remove` (⌫/⌦; removing the loaded track unloads it, selection moves to
   a neighbor) acting on the visual row selection (`selectedTrackID`, lifted here so the
   keyboard can reach it), `load(_:)` bridging to the coordinator (no autoplay), and library-order

@@ -9,12 +9,17 @@
 //  happens per play via AudioFileService, so the 20-min limit / loadError
 //  path applies on play.
 //
+//  Main-actor-bound: all published state and intents run on the main actor,
+//  which also makes the in-flight guards (`playInFlight`, `hasRestored`)
+//  race-free without check-and-set choreography.
+//
 
 import AppKit
 import AVFoundation
 import Combine
 import UniformTypeIdentifiers
 
+@MainActor
 final class LibraryViewModel: ObservableObject {
 	// MARK: Published state
 
@@ -41,8 +46,7 @@ final class LibraryViewModel: ObservableObject {
 	private let store: LibraryStore
 
 	/// Guards against overlapping play requests (a double-click fires two row
-	/// taps): while one load is in flight, further taps are dropped. Main-actor
-	/// mutated, so the check-and-set is race-free.
+	/// taps): while one load is in flight, further taps are dropped.
 	private var playInFlight = false
 	private var hasRestored = false
 	private var terminationObserver: NSObjectProtocol?
@@ -57,8 +61,10 @@ final class LibraryViewModel: ObservableObject {
 		terminationObserver = NotificationCenter.default.addObserver(
 			forName: NSApplication.willTerminateNotification, object: nil, queue: .main
 		) { [weak self] _ in
-			self?.stashCurrentParameters()
-			self?.persist()
+			MainActor.assumeIsolated {
+				self?.stashCurrentParameters()
+				self?.persist()
+			}
 		}
 	}
 
@@ -74,29 +80,25 @@ final class LibraryViewModel: ObservableObject {
 	/// dropped there) and reload the last current track — no autoplay. Latched
 	/// to run once — the hosting `.task` re-fires when the window is recreated.
 	func restore() async {
-		let alreadyRestored = await MainActor.run { () -> Bool in
-			if hasRestored { return true }
-			hasRestored = true
-			return false
-		}
-		guard !alreadyRestored,
-		      let snapshot = store.load(), !snapshot.tracks.isEmpty else { return }
-		await MainActor.run { tracks = snapshot.tracks }
+		guard !hasRestored else { return }
+		hasRestored = true
+		guard let snapshot = store.load(), !snapshot.tracks.isEmpty else { return }
+		tracks = snapshot.tracks
 		if let id = snapshot.currentTrackID,
-		   let track = snapshot.tracks.first(where: { $0.id == id })
+		   let track = tracks.first(where: { $0.id == id })
 		{
 			await load(track)
 		}
 	}
 
-	/// Write the current state through the store. Main-thread only (reads the
-	/// published state); the file is tiny, a synchronous full rewrite is fine.
+	/// Write the current state through the store; the file is tiny, a
+	/// synchronous full rewrite is fine.
 	private func persist() {
 		store.save(LibrarySnapshot(tracks: tracks, currentTrackID: currentTrackID))
 	}
 
 	/// Copy the player's live slider state into the current track's row, so a
-	/// track switch (or quit) keeps the values. Main-thread only.
+	/// track switch (or quit) keeps the values.
 	private func stashCurrentParameters() {
 		guard let capture = captureParameters,
 		      let index = tracks.firstIndex(where: { $0.id == currentTrackID })
@@ -104,118 +106,35 @@ final class LibraryViewModel: ObservableObject {
 		tracks[index].parameters = capture()
 	}
 
-	// MARK: - Import
+	// MARK: - Import & intake
 
-	/// Multi-select open panel → `add(urls:)`. If the library was empty,
-	/// auto-load the first added track (into the waveform; playback stays paused).
+	/// What a completed intake loads into the player (never with autoplay).
+	private enum FollowUp {
+		/// The first track when the library started empty — the import/drop
+		/// convention: something shows in the waveform, nothing plays.
+		case firstIfLibraryWasEmpty
+		/// The first of these URLs now present in the library (whether it was
+		/// just added or already there) — open-and-load / waveform drop.
+		case firstMatching([URL])
+	}
+
+	/// Multi-select open panel → intake.
 	func openFiles() async {
-		let urls = await presentOpenPanel(forFolders: false)
-		guard !urls.isEmpty else { return }
-
-		let wasEmpty = await MainActor.run { tracks.isEmpty }
-		await add(urls: urls)
-		if wasEmpty, let first = await MainActor.run(body: { tracks.first }) {
-			await load(first)
-		}
+		await intake(urls: presentOpenPanel(forFolders: false), then: .firstIfLibraryWasEmpty)
 	}
 
-	/// The transport's open button / File ▸ Open… (⌘O): multi-select panel →
-	/// `add(urls:)`, then load the first chosen track into the waveform
-	/// (already-present tracks aren't duplicated; no autoplay).
+	/// The transport's open button / File ▸ Open… (⌘O): add, then load the
+	/// first chosen track (already-present tracks aren't duplicated).
 	func openFilesAndLoad() async {
-		let urls = await presentOpenPanel(forFolders: false)
-		guard !urls.isEmpty else { return }
-
-		await add(urls: urls)
-		let chosen = Set(urls.map { $0.standardizedFileURL })
-		let track = await MainActor.run {
-			tracks.first { chosen.contains($0.url.standardizedFileURL) }
-		}
-		if let track { await load(track) }
+		let urls = presentOpenPanel(forFolders: false)
+		await intake(urls: urls, then: .firstMatching(urls))
 	}
 
-	/// The sidebar's "Import Folder" button: choose a directory, then reuse the
-	/// drop path (recursive expansion to the supported audio files inside).
+	/// The sidebar's "Import Folder" button: choose directories, expand to the
+	/// supported audio files inside.
 	func openFolder() async {
-		let urls = await presentOpenPanel(forFolders: true)
-		guard !urls.isEmpty else { return }
-		await addDropped(urls: urls)
+		await intake(urls: await expand(presentOpenPanel(forFolders: true)), then: .firstIfLibraryWasEmpty)
 	}
-
-	private func presentOpenPanel(forFolders folders: Bool) async -> [URL] {
-		await MainActor.run {
-			let panel = NSOpenPanel()
-			panel.allowsMultipleSelection = true
-			if folders {
-				panel.canChooseDirectories = true
-				panel.canChooseFiles = false
-			} else {
-				panel.allowedContentTypes = Track.supportedTypes
-			}
-			return panel.runModal() == .OK ? panel.urls : []
-		}
-	}
-
-	/// The single intake path (open panel + drag & drop): dedupes by
-	/// standardized URL, skips non-audio files silently, reads title + duration
-	/// off-main, then publishes the new rows on main — inserted at `index`
-	/// (clamped; e.g. a drop between two rows) or appended when nil.
-	func add(urls: [URL], at index: Int? = nil) async {
-		var seen = await MainActor.run { Set(tracks.map { $0.url.standardizedFileURL }) }
-		var added: [Track] = []
-		for url in urls {
-			let standardized = url.standardizedFileURL
-			guard !seen.contains(standardized), Track.isSupported(url: url) else { continue }
-			seen.insert(standardized)
-			added.append(await makeTrack(url: url))
-		}
-		guard !added.isEmpty else { return }
-		// Capture an immutable copy: referencing the mutated var from the
-		// concurrently-executing closure is an error in Swift 6 mode.
-		let newTracks = added
-		await MainActor.run {
-			if let index {
-				tracks.insert(contentsOf: newTracks, at: min(max(index, 0), tracks.count))
-			} else {
-				tracks.append(contentsOf: newTracks)
-			}
-			persist()
-		}
-	}
-
-	/// Reorder rows (the List's `.onMove` drag). Offsets come straight from
-	/// SwiftUI, so `Array.move` semantics apply.
-	@MainActor func move(fromOffsets: IndexSet, toOffset: Int) {
-		tracks.move(fromOffsets: fromOffsets, toOffset: toOffset)
-		persist()
-	}
-
-	// MARK: - Remove
-
-	/// Remove a track from the library (⌫/⌦ on the selected row). Removing the
-	/// currently loaded track unloads it (playback stops, the content view shows
-	/// the empty state). Selection moves to the nearest neighbor so repeated
-	/// deletes walk the list.
-	@MainActor func remove(id: UUID) {
-		guard let index = tracks.firstIndex(where: { $0.id == id }) else { return }
-		tracks.remove(at: index)
-		if currentTrackID == id {
-			currentTrackID = nil
-			player.unload()
-		}
-		if selectedTrackID == id {
-			selectedTrackID = tracks.isEmpty ? nil : tracks[min(index, tracks.count - 1)].id
-		}
-		persist()
-	}
-
-	/// ⌫/⌦: remove the selected row.
-	@MainActor func removeSelected() {
-		guard let id = selectedTrackID else { return }
-		remove(id: id)
-	}
-
-	// MARK: - Drag & drop intake
 
 	/// Library-zone drop (the sidebar list / empty state): resolve the drag's
 	/// item providers, then insert at the drop gap. Views hand the providers
@@ -230,35 +149,103 @@ final class LibraryViewModel: ObservableObject {
 		await loadDropped(urls: dropped.urls(from: providers))
 	}
 
-	/// Library-zone drop intake: expands folders into the supported audio files
-	/// inside, then feeds the regular `add(urls:at:)` path (`index` = the
-	/// insertion gap under the drop line). Mirrors `openFiles()`: when the
-	/// library was empty, the first added track is loaded (no autoplay).
-	/// This type isn't main-actor-bound, so the folder walk runs off-main.
+	/// Library-zone drop intake (`index` = the insertion gap under the drop line).
 	func addDropped(urls: [URL], at index: Int? = nil) async {
-		let expanded = dropped.expandingFolders(in: urls)
-		guard !expanded.isEmpty else { return }
+		await intake(urls: await expand(urls), at: index, then: .firstIfLibraryWasEmpty)
+	}
 
-		let wasEmpty = await MainActor.run { tracks.isEmpty }
-		await add(urls: expanded, at: index)
-		if wasEmpty, let first = await MainActor.run(body: { tracks.first }) {
-			await load(first)
+	/// Waveform-zone drop intake: only the *first* supported dropped file is
+	/// added (deduped) and loaded.
+	func loadDropped(urls: [URL]) async {
+		guard let first = await expand(urls).first(where: { Track.isSupported(url: $0) })
+		else { return }
+		await intake(urls: [first], then: .firstMatching([first]))
+	}
+
+	/// The single intake path behind every import/drop variant: `add` (dedupe,
+	/// filter, metadata, insert), then the variant's follow-up load.
+	private func intake(urls: [URL], at index: Int? = nil, then followUp: FollowUp) async {
+		guard !urls.isEmpty else { return }
+		let wasEmpty = tracks.isEmpty
+		await add(urls: urls, at: index)
+		switch followUp {
+		case .firstIfLibraryWasEmpty:
+			if wasEmpty, let first = tracks.first {
+				await load(first)
+			}
+		case let .firstMatching(candidates):
+			let chosen = Set(candidates.map { $0.standardizedFileURL })
+			if let track = tracks.first(where: { chosen.contains($0.url.standardizedFileURL) }) {
+				await load(track)
+			}
 		}
 	}
 
-	/// Waveform-zone drop intake: the first supported dropped file is added to
-	/// the library (deduped — an already-present track isn't duplicated) and
-	/// loaded immediately.
-	func loadDropped(urls: [URL]) async {
-		let expanded = dropped.expandingFolders(in: urls)
-		guard let first = expanded.first(where: { Track.isSupported(url: $0) }) else { return }
-
-		await add(urls: [first])
-		let standardized = first.standardizedFileURL
-		let track = await MainActor.run {
-			tracks.first { $0.url.standardizedFileURL == standardized }
+	/// Dedupes by standardized URL, skips non-audio files silently, reads
+	/// title + duration, then inserts at `index` (clamped) or appends when nil.
+	func add(urls: [URL], at index: Int? = nil) async {
+		var seen = Set(tracks.map { $0.url.standardizedFileURL })
+		var added: [Track] = []
+		for url in urls {
+			let standardized = url.standardizedFileURL
+			guard !seen.contains(standardized), Track.isSupported(url: url) else { continue }
+			seen.insert(standardized)
+			added.append(await makeTrack(url: url))
 		}
-		if let track { await load(track) }
+		guard !added.isEmpty else { return }
+		tracks.insert(contentsOf: added, at: min(max(index ?? tracks.count, 0), tracks.count))
+		persist()
+	}
+
+	/// Reorder rows (the list's reorder drag). Offsets come straight from
+	/// SwiftUI, so `Array.move` semantics apply.
+	func move(fromOffsets: IndexSet, toOffset: Int) {
+		tracks.move(fromOffsets: fromOffsets, toOffset: toOffset)
+		persist()
+	}
+
+	private func presentOpenPanel(forFolders folders: Bool) -> [URL] {
+		let panel = NSOpenPanel()
+		panel.allowsMultipleSelection = true
+		if folders {
+			panel.canChooseDirectories = true
+			panel.canChooseFiles = false
+		} else {
+			panel.allowedContentTypes = Track.supportedTypes
+		}
+		return panel.runModal() == .OK ? panel.urls : []
+	}
+
+	/// Folder expansion walks the filesystem recursively — keep it off the main
+	/// actor so a big folder drop can't stall the UI.
+	private func expand(_ urls: [URL]) async -> [URL] {
+		let dropped = dropped
+		return await Task.detached { dropped.expandingFolders(in: urls) }.value
+	}
+
+	// MARK: - Remove
+
+	/// Remove a track from the library (⌫/⌦ on the selected row). Removing the
+	/// currently loaded track unloads it (playback stops, the content view shows
+	/// the empty state). Selection moves to the nearest neighbor so repeated
+	/// deletes walk the list.
+	func remove(id: UUID) {
+		guard let index = tracks.firstIndex(where: { $0.id == id }) else { return }
+		tracks.remove(at: index)
+		if currentTrackID == id {
+			currentTrackID = nil
+			player.unload()
+		}
+		if selectedTrackID == id {
+			selectedTrackID = tracks.isEmpty ? nil : tracks[min(index, tracks.count - 1)].id
+		}
+		persist()
+	}
+
+	/// ⌫/⌦: remove the selected row.
+	func removeSelected() {
+		guard let id = selectedTrackID else { return }
+		remove(id: id)
 	}
 
 	// MARK: - Playback bridge
@@ -268,33 +255,25 @@ final class LibraryViewModel: ObservableObject {
 	/// >20-min file keeps the previous selection and shows loadError).
 	@discardableResult
 	func load(_ track: Track) async -> Bool {
-		let alreadyInFlight = await MainActor.run { () -> Bool in
-			if playInFlight { return true }
-			playInFlight = true
+		guard !playInFlight else { return false }
+		playInFlight = true
+		defer { playInFlight = false }
+
+		stashCurrentParameters()
+		guard await player.load(url: track.url) else { return false }
+		// The row may have been removed (⌫) while the decode was in flight —
+		// don't resurrect it as the current track.
+		guard tracks.contains(where: { $0.id == track.id }) else {
+			player.unload()
 			return false
 		}
-		guard !alreadyInFlight else { return false }
-
-		await MainActor.run { stashCurrentParameters() }
-		let loadedOK = await player.load(url: track.url)
-		await MainActor.run {
-			playInFlight = false
-			if loadedOK {
-				// The row may have been removed (⌫) while the decode was in
-				// flight — don't resurrect it as the current track.
-				guard tracks.contains(where: { $0.id == track.id }) else {
-					player.unload()
-					return
-				}
-				currentTrackID = track.id
-				// Look the parameters up by id — the row may have been updated
-				// (a stash) since the caller captured `track`.
-				let parameters = tracks.first { $0.id == track.id }?.parameters ?? track.parameters
-				applyParameters?(parameters)
-				persist()
-			}
-		}
-		return loadedOK
+		currentTrackID = track.id
+		// Look the parameters up by id — the row may have been updated
+		// (a stash) since the caller captured `track`.
+		let parameters = tracks.first { $0.id == track.id }?.parameters ?? track.parameters
+		applyParameters?(parameters)
+		persist()
+		return true
 	}
 
 	// MARK: - Next / previous / auto-advance
@@ -305,32 +284,27 @@ final class LibraryViewModel: ObservableObject {
 	/// Step to the next track in list order; clamped — a no-op on the last
 	/// track. Preserves the play state (playing stays playing, paused stays paused).
 	func next() async {
-		let move = await MainActor.run { TrackNavigation.next(in: tracks, after: currentTrackID) }
-		await perform(move)
+		await perform(TrackNavigation.next(in: tracks, after: currentTrackID))
 	}
 
 	/// Step back in list order — or restart the current material (> 3 s in, or
 	/// already on the first track). Preserves the play state.
 	func previous() async {
-		let move = await MainActor.run {
-			TrackNavigation.previous(
-				in: tracks,
-				before: currentTrackID,
-				currentTime: player.currentTime,
-				isLoaded: player.currentURL != nil
-			)
-		}
-		await perform(move)
+		await perform(TrackNavigation.previous(
+			in: tracks,
+			before: currentTrackID,
+			currentTime: player.currentTime,
+			isLoaded: player.currentURL != nil
+		))
 	}
 
 	/// End-of-track auto-advance (wired to `PlaybackCoordinator.onTrackEnded`):
 	/// play the next track; on the last track the transport just stays stopped.
 	func trackEnded() async {
-		guard case let .change(target)? = await MainActor.run(body: {
-			TrackNavigation.next(in: tracks, after: currentTrackID)
-		}) else { return }
+		guard case let .change(target)? = TrackNavigation.next(in: tracks, after: currentTrackID)
+		else { return }
 		if await load(target) {
-			await MainActor.run { player.play() }
+			player.play()
 		}
 	}
 
@@ -340,11 +314,11 @@ final class LibraryViewModel: ObservableObject {
 		switch move {
 		case .restart:
 			// Restarts the armed loop at A, or the track at 0.
-			await MainActor.run { player.restart() }
+			player.restart()
 		case let .change(target):
-			let wasPlaying = await MainActor.run { player.isPlaying }
+			let wasPlaying = player.isPlaying
 			if await load(target), wasPlaying {
-				await MainActor.run { player.play() }
+				player.play()
 			}
 		case nil:
 			break
