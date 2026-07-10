@@ -52,8 +52,9 @@ tests, builds the universal zip via `just release <version>`, creates the GitHub
 commits the `version`/`sha256` bump to `Casks/looped.rb` on `main` (the cask URL embeds the
 version). `.github/workflows/ci.yml` runs `swift test` on every push/PR (macOS runners are free
 for public repos; SwiftPM `.build` cached on `Package.resolved`). Users install via the Pages
-site (`docs/`) or `brew install --cask --no-quarantine looped` — `--no-quarantine` matters
-because Gatekeeper rejects un-notarized quarantined apps.
+site (`docs/`) or `brew install --cask looped`, then `xattr -dr com.apple.quarantine` on the
+app — Gatekeeper rejects un-notarized quarantined apps, and Homebrew 6 dropped the old
+`--no-quarantine` flag, so the attribute must be cleared manually after install/download.
 
 `just run` assembles `.build/Looped.app` (an `Info.plist` + the SwiftPM binary + the app icon) and
 `open`s it so it launches as a real foreground app (Dock/menu/focus) — min window 1024×800, set in
