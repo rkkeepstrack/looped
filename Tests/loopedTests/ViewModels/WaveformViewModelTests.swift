@@ -16,8 +16,47 @@ import Testing
 struct WaveformViewModelTests {
 	private func makeViewModel() -> WaveformViewModel {
 		let vm = WaveformViewModel(service: DefaultWaveformService())
-		vm.waveformWidth = 100 // matches the WaveformService test layout (width → 108)
+		vm.updateViewportWidth(100) // matches the WaveformService test layout (width → 108)
 		return vm
+	}
+
+	// MARK: - Viewport width (grow now, shrink after the sidebar animation)
+
+	@Test func viewportGrowthAppliesImmediately() {
+		let vm = makeViewModel()
+		vm.updateViewportWidth(300)
+		#expect(vm.waveformWidth == 300)
+	}
+
+	@Test func viewportShrinkIsDeferred() {
+		let vm = makeViewModel()
+		vm.updateViewportWidth(60)
+		// Still the old width — the shrink is deferred.
+		#expect(vm.waveformWidth == 100)
+	}
+
+	@Test func viewportShrinkLandsOnFlush() {
+		let vm = makeViewModel()
+		vm.updateViewportWidth(60)
+		vm.flushPendingShrink() // stands in for the timer firing
+		#expect(vm.waveformWidth == 60)
+	}
+
+	@Test func successiveShrinksLandAtTheLastWidth() {
+		let vm = makeViewModel()
+		// The per-frame onChange path during the animation: each change reschedules.
+		vm.updateViewportWidth(80)
+		vm.updateViewportWidth(60)
+		vm.flushPendingShrink()
+		#expect(vm.waveformWidth == 60)
+	}
+
+	@Test func regrowingCancelsAPendingShrink() {
+		let vm = makeViewModel()
+		vm.updateViewportWidth(60) // pending shrink…
+		vm.updateViewportWidth(100) // …cancelled
+		vm.flushPendingShrink()
+		#expect(vm.waveformWidth == 100)
 	}
 
 	@Test func centerTimeIsPlaybackTimeWhenNotScrolling() {

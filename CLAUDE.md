@@ -189,6 +189,23 @@ One line per file; the *why* behind non-obvious designs lives in the next sectio
   labels). The canvas draws **synchronously** (`SyncWaveformCanvas`, a `WaveformLiveCanvas` clone)
   so the reslice and its compensating offset commit in one pass — the library's async canvas
   lagged a frame and made the seam flicker.
+- **Sidebar toggle vs. waveform**: the window math centers the playhead sample in the *actual*
+  frame regardless of the stored viewport width, so `WaveformViewModel.updateViewportWidth`
+  grows the render width immediately (a too-narrow chunk leaves blank edges) but defers shrinks
+  past the sidebar animation — the oversized chunk is just clipped and rides the animation;
+  re-slicing mid-animation visibly jumped. Each change reschedules the shrink timer (the delay
+  is wired from `Theme.sidebarAnimationDuration` at the composition root — the VM stays
+  Theme-free). `waveformWidth` is `private(set)` — go through `updateViewportWidth`. The view
+  pins its outer stack to the *live* geometry width (GeometryReader aligns top-leading; sized to
+  the chunk, the playhead would track the stale stored width and snap on commit). The minimap
+  debounces its overview re-downsample the same way — the stale envelope stretches with the
+  frame; recomputing per frame shimmers. The whole strip (envelope, played mask, box, loop
+  marks) is laid out in the *settled* width's coordinates and mapped onto the live width by one
+  leading-anchored `scaleEffect` — its TimelineView re-evaluates mid-animation and would reset
+  an in-flight layout tween (content snaps while the container still tweens), whereas a
+  render-only scale rides the animated transaction untouched; all strip x-positions are linear
+  in width, so the scaled geometry is exact and the post-refresh swap to scale 1 is
+  pixel-identical.
 - **Minimap (full-track overview)**: box-drag is a scrub (it feeds the same `WaveformViewModel`
   scroll-offset/anchor machinery, converted from strip pixels) and the release **seeks** to the
   dropped position — identical semantics to the big waveform's scrub, incl. snap-back when the

@@ -36,8 +36,8 @@ struct ContentView: View {
 		// collapsed), matching the mock.
 		.overlay(alignment: .topLeading) {
 			Button {
-				// Just toggle: the waveform's render width is viewport-independent,
-				// so this only re-centers (pans) — no re-analysis or repaint.
+				// Just toggle: the waveform rides the animation (grow-now /
+				// shrink-later width policy in WaveformViewModel) — no re-analysis.
 				sidebarOpen.toggle()
 			} label: {
 				Image(systemName: "sidebar.leading").font(.title3)

@@ -14,8 +14,14 @@ import SwiftUI
 final class WaveformViewModel: ObservableObject {
 	// MARK: Layout / zoom
 
-	/// Viewport width in points.
-	@Published var waveformWidth: CGFloat = 0
+	/// Viewport width in points; committed via `updateViewportWidth`.
+	@Published private(set) var waveformWidth: CGFloat = 0
+	/// How long a shrink is deferred. Each width change reschedules, so this only
+	/// needs to outlast one animation frame gap; the composition root sets it from
+	/// `Theme.sidebarAnimationDuration` as a safe upper bound.
+	var viewportShrinkDelay: TimeInterval = 0.33
+	private var shrinkTimer: Timer?
+	private var pendingShrinkWidth: CGFloat?
 	/// Horizontal zoom: waveform pixels per second of audio.
 	var pixelsPerSecond: CGFloat = 100
 	/// Analysis samples per display pixel (also the DSWaveformImage config scale).
@@ -46,6 +52,11 @@ final class WaveformViewModel: ObservableObject {
 		self.service = service
 	}
 
+	deinit {
+		shrinkTimer?.invalidate()
+		snapTimer?.invalidate()
+	}
+
 	/// Geometry snapshot handed to the service for the pure math.
 	private var layout: WaveformLayout {
 		WaveformLayout(
@@ -55,6 +66,39 @@ final class WaveformViewModel: ObservableObject {
 			barWidth: barWidth,
 			barSpacing: barSpacing
 		)
+	}
+
+	// MARK: - Viewport width
+
+	/// Commit a viewport resize. Grows apply immediately (a too-narrow chunk leaves
+	/// blank edges); shrinks wait for the layout to settle: the window math centers
+	/// the playhead in the *actual* frame regardless of the stored width, so the
+	/// oversized chunk is just clipped and rides the sidebar animation instead of
+	/// re-slicing mid-flight (visible jump).
+	func updateViewportWidth(_ newWidth: CGFloat) {
+		shrinkTimer?.invalidate()
+		pendingShrinkWidth = nil
+		guard newWidth != waveformWidth else { return }
+		if newWidth > waveformWidth {
+			waveformWidth = newWidth
+		} else {
+			pendingShrinkWidth = newWidth
+			let timer = Timer(timeInterval: viewportShrinkDelay, repeats: false) { [weak self] _ in
+				self?.flushPendingShrink()
+			}
+			RunLoop.main.add(timer, forMode: .common)
+			shrinkTimer = timer
+		}
+	}
+
+	/// Apply a deferred shrink now (the timer's action; also the test hook — the
+	/// timer itself needs a live run loop).
+	func flushPendingShrink() {
+		shrinkTimer?.invalidate()
+		shrinkTimer = nil
+		guard let width = pendingShrinkWidth else { return }
+		pendingShrinkWidth = nil
+		waveformWidth = width
 	}
 
 	// MARK: - Analysis
