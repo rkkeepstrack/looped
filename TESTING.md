@@ -99,6 +99,21 @@ real track (WAV/MP3/AIFF) a couple of minutes long. Launch with `just run`.
 **Speed / volume**
 - [ ] Speed slider changes tempo without altering pitch; volume slider works. **[auto: wiring]**
 
+**Menu bar** (enablement/titles project already-tested VM state; the menus themselves
+need a real app — the step intents are **[auto]**)
+- [ ] **File**: Import Files… (⌘O) adds + loads the first chosen; Import Folder… (⇧⌘O)
+      expands; Remove Selected Track (⌘⌫) is disabled with no selection; no Edit menu.
+- [ ] **Playback**: Play/Pause title flips live; Stop ⌘.; Next ⌘→ / Previous ⌘←
+      disabled with < 2 tracks; Volume ⌘↑/⌘↓, Faster/Slower ⌘+/⌘−, Pitch ⌥⌘+/⌥⌘−
+      (disabled + no effect while synced); Reset Speed & Pitch; Sync toggle ⌥⌘S
+      shows a checkmark; everything except Next/Previous disabled with nothing loaded.
+- [ ] **Loop**: Set/Clear titles flip live with the point state (bare a/b/r fire the
+      menu items — exactly once, no double-fire); Clear Loop Points disabled while
+      neither point is set; nudge items disabled per unset point.
+- [ ] **View ▸ Toggle Sidebar** works and the Tab key toggles too (via the key
+      monitor — the menu item shows no equivalent); title flips Hide/Show; spacebar
+      still play/pauses via the key monitor (no menu equivalent shown for space).
+
 **Layout**
 - [ ] Sidebar toggle animates and pushes content right; title + transport stay centered.
 - [ ] Resizing the window re-lays out without re-analyzing/stuttering.

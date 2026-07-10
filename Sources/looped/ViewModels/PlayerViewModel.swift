@@ -217,6 +217,36 @@ final class PlayerViewModel: ObservableObject {
 		playback.setVolume(volume)
 	}
 
+	// MARK: - Menu nudges (keyboard steps over the slider values)
+
+	/// Clamped to the slider's 0…2 range.
+	func stepVolume(by delta: Float) {
+		volume = min(max(volume + delta, 0), 2)
+		updateVolume()
+	}
+
+	/// Semitone steps move in the slider's log space, clamped to its 0.5×…2×
+	/// range.
+	func stepRate(bySemitones semitones: Float) {
+		rate = min(max(rate * pow(2, semitones / 12), 0.5), 2)
+		updateRate()
+	}
+
+	/// Clamped to ±12. Refused while synced — there is no independent pitch in
+	/// that mode (the slider is hidden too; the menu must match).
+	func stepPitch(bySemitones semitones: Float) {
+		guard !syncPitchAndRate else { return }
+		pitchSemitones = min(max(pitchSemitones + semitones, -12), 12)
+		updatePitch()
+	}
+
+	/// Back to 1× / 0 st (the sliders' right-click reset, menu-discoverable).
+	func resetRateAndPitch() {
+		rate = 1
+		pitchSemitones = 0
+		applyPitchAndRate()
+	}
+
 	// MARK: - Per-track parameters
 
 	/// The slider state as a value — the library stashes it per track on a
@@ -275,6 +305,10 @@ final class PlayerViewModel: ObservableObject {
 	/// Smallest allowed A–B gap. The crossfade self-limits below this, but a
 	/// sub-perceptual loop is useless — keep nudges from collapsing the range.
 	static let minLoopGap: TimeInterval = 0.05
+
+	/// Per-click nudge step, shared by the loop panel's chevrons and the Loop
+	/// menu items.
+	static let loopNudgeStep: TimeInterval = 0.05
 
 	/// Shift the A point by `delta`, clamped to `[0, B − minLoopGap]` (or the file
 	/// end when B is unset). No-op when A isn't set. Re-arms via `setLoopStart`,

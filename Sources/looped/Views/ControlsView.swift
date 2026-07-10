@@ -245,8 +245,7 @@ private struct LoopPanel: View {
 		})
 	}
 
-	/// Per-click nudge step for the chevron buttons.
-	private static let nudgeStep: TimeInterval = 0.05
+	private static let nudgeStep = PlayerViewModel.loopNudgeStep
 
 	private func loopRow(symbol: String, color: Color, isSet: Bool, set: @escaping () -> Void, clear: @escaping () -> Void, nudge: @escaping (TimeInterval) -> Void) -> some View {
 		HStack(spacing: 8) {

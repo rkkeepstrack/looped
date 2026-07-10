@@ -20,6 +20,16 @@ struct loopedApp: App {
 		// user default (milliseconds) — the system's is too slow for hint-bearing
 		// controls like the playthrough-mode button. `register` doesn't persist.
 		UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 500])
+		// AppKit appends Dictation / Emoji & Symbols to any menu titled "Edit"
+		// at runtime, which would resurrect the Edit menu `AppCommands` removes
+		// as a stub of just those system items.
+		UserDefaults.standard.register(defaults: [
+			"NSDisabledDictationMenuItem": true,
+			"NSDisabledCharacterPaletteMenuItem": true,
+		])
+		// Single-window app: no window tabbing, and no AppKit-injected
+		// "Show Tab Bar"/"Show All Tabs" cluttering the View menu.
+		NSWindow.allowsAutomaticWindowTabbing = false
 
 		let toasts = ToastCenter()
 		let looping = DefaultLoopingService()
@@ -80,44 +90,6 @@ struct loopedApp: App {
 		}
 		.commands {
 			AppCommands(player: player, library: library)
-		}
-	}
-}
-
-/// The native menu bar: File ▸ Open… (⌘O) plus a Playback menu mirroring the
-/// transport. A separate `Commands` struct with `@ObservedObject` view-models
-/// so the items (Play/Pause title, mode checkmark, enablement) stay live.
-private struct AppCommands: Commands {
-	@ObservedObject var player: PlayerViewModel
-	@ObservedObject var library: LibraryViewModel
-
-	var body: some Commands {
-		CommandGroup(replacing: .newItem) {
-			Button("Open…") {
-				Task { await library.openFilesAndLoad() }
-			}
-			.keyboardShortcut("o")
-		}
-
-		CommandMenu("Playback") {
-			Button(player.isPlaying ? "Pause" : "Play") {
-				player.togglePlayPause()
-			}
-			.disabled(player.audioURL == nil)
-
-			Button("Stop") {
-				player.stop()
-			}
-			.disabled(player.audioURL == nil)
-
-			Divider()
-
-			Picker("When a Track Ends", selection: $player.playthroughMode) {
-				Text("Loop This Track").tag(PlaythroughMode.loop)
-				Text("Play the Next Track").tag(PlaythroughMode.advance)
-				Text("Stop").tag(PlaythroughMode.stop)
-			}
-			.pickerStyle(.inline)
 		}
 	}
 }
