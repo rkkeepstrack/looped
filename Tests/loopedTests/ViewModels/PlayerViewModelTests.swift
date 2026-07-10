@@ -36,8 +36,10 @@ final class PlayerViewModelTests {
 	/// never touches (or reads) the test host's real defaults.
 	private let defaults = UserDefaults(suiteName: "loopedTests-\(UUID().uuidString)")!
 
+	private let toasts = ToastCenter()
+
 	private func makeViewModel(files: AudioFileService = DefaultAudioFileService()) -> PlayerViewModel {
-		let transport = PlaybackCoordinator(playback: fake, files: files)
+		let transport = PlaybackCoordinator(playback: fake, files: files, toasts: toasts)
 		self.transport = transport
 		return PlayerViewModel(transport: transport, playback: fake, looping: DefaultLoopingService(), defaults: defaults)
 	}
@@ -54,7 +56,7 @@ final class PlayerViewModelTests {
 	@Test func loadPopulatesStateAndPointsThePlayerAtTheFile() async {
 		let vm = await loadedViewModel()
 
-		#expect(vm.loadError == nil)
+		#expect(toasts.toasts.isEmpty)
 		#expect(vm.currentFileName == fixture.lastPathComponent)
 		#expect(vm.audioURL == fixture)
 		#expect(abs((vm.duration ?? 0) - 1.0) <= 0.05)
@@ -62,11 +64,11 @@ final class PlayerViewModelTests {
 		#expect(!vm.isPlaying)
 	}
 
-	@Test func loadingTooLongFileSurfacesAnError() async {
+	@Test func loadingTooLongFileSurfacesAToast() async {
 		let vm = makeViewModel(files: TooLongAudioFileService())
 		await vm.load(url: fixture)
 
-		#expect(vm.loadError == "That track is longer than 20 minutes.")
+		#expect(toasts.toasts.first?.messages == ["“\(fixture.lastPathComponent)” is longer than 20 minutes."])
 		#expect(vm.currentFileName == nil) // nothing loaded
 		#expect(fake.setSourceCount == 0)
 	}

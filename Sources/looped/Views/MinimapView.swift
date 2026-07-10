@@ -162,10 +162,11 @@ struct MinimapView: View {
 						offsetCalculator.animateSnapBack(playbackTime: audioPlayer.livePlaybackTime())
 					}
 				case let .pending(startX):
-					// A stationary release outside the box seeks to the clicked time.
+					// A stationary release outside the box seeks to the clicked time;
+					// a refused seek (loop armed) is deliberately inert here.
 					if abs(value.translation.width) < 4, abs(value.translation.height) < 4 {
 						let mapper = OverviewMapper(stripWidth: width, duration: duration)
-						audioPlayer.jumpTo(time: mapper.time(forX: startX))
+						_ = audioPlayer.jumpTo(time: mapper.time(forX: startX))
 					}
 				case .idle:
 					break
