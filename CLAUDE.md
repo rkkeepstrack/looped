@@ -24,6 +24,7 @@ Standard SwiftPM layout, everything under the repo/git root (this file, `Package
   `Stores/`, `ViewModels/`, `Views/`, `Utils/` (+ `Assets.xcassets`, excluded from the build).
 - **`Tests/loopedTests/`** — unit tests (module `loopedTests`), mirroring the source folders.
 - **`plans/`** — remaining-work docs (`README.md` first).
+- **`assets/`** — app icon: `AppIcon.svg` (source of truth) + the generated `AppIcon.icns`.
 
 ## Build & Run
 
@@ -39,9 +40,11 @@ just format         # swiftformat .   (just format-check to lint only)
 just clean          # swift package clean + remove .build/Looped.app
 ```
 
-`just run` assembles `.build/Looped.app` (an `Info.plist` + the SwiftPM binary) and `open`s it so it
-launches as a real foreground app (Dock/menu/focus) — min window 1024×800, set in `loopedApp.swift`.
-No asset catalog is compiled (`actool` needs Xcode) — no app icon / accent color via Info.plist.
+`just run` assembles `.build/Looped.app` (an `Info.plist` + the SwiftPM binary + the app icon) and
+`open`s it so it launches as a real foreground app (Dock/menu/focus) — min window 1024×800, set in
+`loopedApp.swift`. No asset catalog is compiled (`actool` needs Xcode); the app icon instead ships
+as a checked-in `assets/AppIcon.icns` (bundled via `CFBundleIconFile`), regenerated from
+`assets/AppIcon.svg` with `just icon` (needs `librsvg` from the Brewfile; `iconutil` is macOS-native).
 
 ## Architecture (SwiftUI + MVVM, DI'd services)
 
