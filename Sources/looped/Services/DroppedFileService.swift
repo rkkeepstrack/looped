@@ -11,9 +11,17 @@
 import Foundation
 import UniformTypeIdentifiers
 
+/// The outcome of resolving a drag's item providers: the usable URLs plus how
+/// many providers failed to resolve (surfaced to the user, not silently dropped).
+struct ResolvedDrop {
+	var urls: [URL] = []
+	var unreadableCount = 0
+}
+
 protocol DroppedFileService {
-	/// Resolves dropped `.fileURL` item providers into URLs.
-	func urls(from providers: [NSItemProvider]) async -> [URL]
+	/// Resolves dropped `.fileURL` item providers into URLs; providers that
+	/// fail to resolve are counted, not swallowed.
+	func urls(from providers: [NSItemProvider]) async -> ResolvedDrop
 	/// Recursively expands folder URLs into the supported audio files inside;
 	/// plain file URLs pass through untouched.
 	func expandingFolders(in urls: [URL]) -> [URL]
@@ -22,8 +30,8 @@ protocol DroppedFileService {
 struct DefaultDroppedFileService: DroppedFileService {
 	/// macOS delivers the `.fileURL` payload as `Data`; reconstruct with
 	/// `URL(dataRepresentation:relativeTo:)`.
-	func urls(from providers: [NSItemProvider]) async -> [URL] {
-		var urls: [URL] = []
+	func urls(from providers: [NSItemProvider]) async -> ResolvedDrop {
+		var resolved = ResolvedDrop()
 		for provider in providers
 			where provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
 		{
@@ -39,9 +47,13 @@ struct DefaultDroppedFileService: DroppedFileService {
 					}
 				}
 			}
-			if let url { urls.append(url) }
+			if let url {
+				resolved.urls.append(url)
+			} else {
+				resolved.unreadableCount += 1
+			}
 		}
-		return urls
+		return resolved
 	}
 
 	/// Folder contents are filtered to `Track.isSupported` and sorted by path

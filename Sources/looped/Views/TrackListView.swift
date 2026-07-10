@@ -74,7 +74,7 @@ struct TrackListView: View {
 		.onTapGesture { library.selectedTrackID = track.id }
 		.simultaneousGesture(
 			TapGesture(count: 2)
-				.onEnded { Task { await library.load(track) } }
+				.onEnded { Task { _ = await library.load(track) } }
 		)
 		// High priority or the taps win arbitration and the drag starts late
 		// (a hard pull); stationary clicks still resolve as taps.
