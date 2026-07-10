@@ -6,8 +6,6 @@ Build/run/test and architecture live in the repo-root `CLAUDE.md`.
 Ordered, reviewable slices; 02→03 build on the shipped 01, 04 is independent,
 05/07 build on the library+transport chain, 06 is a stretch:
 
-- **[02-import-drag-drop.md](02-import-drag-drop.md)** — drop files/folders onto the
-  window → library intake. ⬜
 - **[03-transport-auto-advance.md](03-transport-auto-advance.md)** — next/previous +
   auto-advance at track end. ⬜
 - **[04-full-track-preview.md](04-full-track-preview.md)** — whole-song minimap below
@@ -31,4 +29,5 @@ points · UI redesign · service-oriented architecture split · windowed wavefor
 rendering · display-synced smooth pan + wall-clock playback clock · scrub
 highlight/anchor · rate-desync fix · live slider labels · independent rate+pitch with
 varispeed sync toggle · loop-point nudge arrows · track library (01: `Track` +
-`LibraryViewModel`, sidebar list, click-to-play, multi-select import).
+`LibraryViewModel`, sidebar list, click-to-play, multi-select import) · drag & drop
+import (02: whole-window drop of files/folders, recursive expansion, targeted highlight).

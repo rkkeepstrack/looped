@@ -34,6 +34,9 @@ enum Theme {
 	/// Scrub highlight — subtle light blue (the cool counterpart to the warm
 	/// played-orange), drawn between the played edge and the scrub cursor.
 	static let waveformScrub = Color(red: 0.45, green: 0.68, blue: 0.90).opacity(0.75)
+	/// Translucent light-gray wash over the waveform while a file drag hovers
+	/// the waveform drop zone (drop → load immediately).
+	static let waveformDropHighlight = Color(white: 0.85).opacity(0.18)
 
 	// MARK: Metrics
 
@@ -42,6 +45,12 @@ enum Theme {
 	static let sidebarWidth: CGFloat = 220
 	static let sidebarMinWidth: CGFloat = 160
 	static let sidebarMaxWidth: CGFloat = 420
+	/// Fixed sidebar track-row height — uniform rows keep the hand-rolled
+	/// reorder/drop index math trivial (`RowInsertion`).
+	static let trackRowHeight: CGFloat = 28
+	/// The reorder/drop insertion line in the track list: dimmed text color,
+	/// quieter than the accent.
+	static let insertionLine = textPrimary.opacity(0.6)
 	static let panelCorner: CGFloat = 12
 	static let panelBorder = Color.white.opacity(0.08)
 

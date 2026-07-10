@@ -21,7 +21,10 @@ struct loopedApp: App {
 			looping: DefaultLoopingService()
 		)
 		_player = StateObject(wrappedValue: player)
-		_library = StateObject(wrappedValue: LibraryViewModel(player: player))
+		_library = StateObject(wrappedValue: LibraryViewModel(
+			player: player,
+			dropped: DefaultDroppedFileService()
+		))
 	}
 
 	var body: some Scene {

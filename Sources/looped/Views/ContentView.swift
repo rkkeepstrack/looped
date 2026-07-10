@@ -10,6 +10,9 @@ import SwiftUI
 struct ContentView: View {
 	@EnvironmentObject var audioPlayer: PlayerViewModel
 	@EnvironmentObject var offsetCalculator: WaveformViewModel
+	@EnvironmentObject var library: LibraryViewModel
+	/// A file drag is hovering the waveform drop zone (drop → load immediately).
+	@State private var waveformDropTargeted = false
 	@AppStorage("sidebarOpen") private var sidebarOpen = true
 	@AppStorage("sidebarWidth") private var sidebarWidth = Double(Theme.sidebarWidth)
 	/// Width latched at drag start, so the resize tracks the cursor without drift.
@@ -18,7 +21,7 @@ struct ContentView: View {
 	var body: some View {
 		HStack(spacing: 0) {
 			if sidebarOpen {
-				Sidebar()
+				SidebarView()
 					.frame(width: clampedSidebarWidth)
 					.transition(.move(edge: .leading))
 				sidebarResizeHandle
@@ -86,10 +89,29 @@ struct ContentView: View {
 		VStack(spacing: 0) {
 			header
 			Divider()
-			WaveformDisplayView()
+			waveformDropZone
 			Divider()
 			ControlsView()
 		}
+	}
+
+	/// The waveform as a drop zone: while a file drag hovers, the whole
+	/// waveform gets a translucent light-gray wash; dropping loads the file
+	/// immediately (the library zone — the sidebar list — only inserts).
+	private var waveformDropZone: some View {
+		WaveformDisplayView()
+			.overlay {
+				if waveformDropTargeted {
+					Rectangle()
+						.fill(Theme.waveformDropHighlight)
+						.allowsHitTesting(false)
+				}
+			}
+			.onDrop(of: [.fileURL], isTargeted: $waveformDropTargeted) { providers in
+				guard !providers.isEmpty else { return false }
+				Task { await library.handleWaveformDrop(providers: providers) }
+				return true
+			}
 	}
 
 	// MARK: Header (name + currentTime | fileTime)
@@ -114,95 +136,5 @@ struct ContentView: View {
 		// pushes everything right.
 		.frame(maxWidth: .infinity)
 		.frame(height: 64)
-	}
-}
-
-// MARK: - Sidebar
-
-/// Collapsible left panel: the import button + the track library list.
-private struct Sidebar: View {
-	@EnvironmentObject var library: LibraryViewModel
-	/// Row picked by a single click — purely visual until a double-click plays it.
-	@State private var selectedTrackID: UUID?
-
-	var body: some View {
-		VStack(alignment: .leading, spacing: 14) {
-			Button {
-				Task { await library.openFiles() }
-			} label: {
-				Label("Import Files", systemImage: "square.and.arrow.down")
-					.frame(maxWidth: .infinity)
-			}
-			.buttonStyle(.bordered)
-			.controlSize(.large)
-
-			if library.tracks.isEmpty {
-				Text("Your tracks will appear here")
-					.font(.caption)
-					.foregroundStyle(Theme.textSecondary)
-			} else {
-				ScrollView {
-					LazyVStack(alignment: .leading, spacing: 2) {
-						ForEach(library.tracks) { track in
-							TrackRow(
-								track: track,
-								isCurrent: track.id == library.currentTrackID,
-								isSelected: track.id == selectedTrackID
-							)
-							// Single click selects instantly (also on the first
-							// click of a double); the simultaneous double-click
-							// loads the track into the waveform.
-							.onTapGesture { selectedTrackID = track.id }
-							.simultaneousGesture(
-								TapGesture(count: 2)
-									.onEnded { Task { await library.load(track) } }
-							)
-						}
-					}
-				}
-			}
-
-			Spacer(minLength: 0)
-		}
-		.padding(.horizontal, 12)
-		.padding(.top, 48) // clear the top-left toggle
-		.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-		.background(Theme.surface)
-	}
-}
-
-/// One library row: title + duration; the current track reads in accent orange,
-/// the (single-click) selected row gets a lighter background.
-private struct TrackRow: View {
-	let track: Track
-	let isCurrent: Bool
-	let isSelected: Bool
-	@State private var hovering = false
-
-	var body: some View {
-		HStack(spacing: 8) {
-			Text(track.title)
-				.font(.callout)
-				.lineLimit(1)
-				.truncationMode(.tail)
-				.foregroundStyle(isCurrent ? Theme.accent : Theme.textPrimary)
-
-			Spacer(minLength: 4)
-
-			if let duration = track.duration {
-				Text(TimeFormatter.mmss(duration))
-					.font(.caption.monospacedDigit())
-					.foregroundStyle(isCurrent ? Theme.accentDim : Theme.textSecondary)
-			}
-		}
-		.padding(.horizontal, 8)
-		.padding(.vertical, 5)
-		.frame(maxWidth: .infinity, alignment: .leading)
-		.background(
-			RoundedRectangle(cornerRadius: 6)
-				.fill(isSelected ? Color.white.opacity(0.12) : hovering ? Color.white.opacity(0.06) : Color.clear)
-		)
-		.contentShape(Rectangle())
-		.onHover { hovering = $0 }
 	}
 }
