@@ -26,6 +26,12 @@
 		padding: 2rem;
 	}
 	main { max-width: 34rem; text-align: center; }
+	img.shot {
+		display: block;
+		width: min(52rem, 92vw);
+		margin: 2.5rem 0 0 50%;
+		transform: translateX(-50%);
+	}
 	img.icon { width: 128px; height: 128px; }
 	h1 { font-size: 2.2rem; margin: 0.5rem 0 0.25rem; letter-spacing: 0.02em; }
 	p.tag { color: var(--dim); margin-bottom: 2rem; }
@@ -47,7 +53,17 @@
 		text-align: left;
 	}
 	section h2 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--dim); margin-bottom: 0.5rem; }
-	pre { overflow-x: auto; font-size: 0.85rem; line-height: 1.7; }
+	pre {
+		overflow-x: auto;
+		font-size: 0.85rem;
+		line-height: 1.7;
+		padding-bottom: 0.5rem;
+		scrollbar-width: thin;
+		scrollbar-color: #4a4335 transparent;
+	}
+	pre::-webkit-scrollbar { height: 6px; }
+	pre::-webkit-scrollbar-track { background: transparent; }
+	pre::-webkit-scrollbar-thumb { background: #4a4335; border-radius: 3px; }
 	code { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
 	p.note { color: var(--dim); font-size: 0.85rem; margin-top: 1.5rem; }
 	a { color: var(--accent); }
@@ -57,9 +73,11 @@
 <main>
 	<img class="icon" src="icon.svg" alt="Looped app icon">
 	<h1>Looped</h1>
-	<p class="tag">Audio looper for macOS — waveform, seamless A/B loops, speed &amp; pitch control.</p>
+	<p class="tag">Audio looper for rehearsing instruments on macOS. <br> Waveform, Library, seamless loops, speed &amp; pitch control.</p>
 
 	<a class="button" href="https://github.com/rkkeepstrack/looped/releases/latest">Download for macOS</a>
+
+	<img class="shot" src="Application.png" alt="Looped: waveform with A/B loop points, track library sidebar, transport controls">
 
 	<section>
 		<h2>Or install with Homebrew</h2>
@@ -68,10 +86,8 @@ brew install --cask --no-quarantine looped</code></pre>
 	</section>
 
 	<p class="note">
-		Requires macOS 15+. Looped isn’t notarized, so a plain download needs
-		<code>xattr -dr com.apple.quarantine</code> on the app (Homebrew’s
-		<code>--no-quarantine</code> does this for you).
-		Source on <a href="https://github.com/rkkeepstrack/looped">GitHub</a>.
+		Requires macOS 15+. Looped isn’t notarized, so a plain download needs crawling into macOS security settings. (Homebrew’s
+		<code>--no-quarantine</code> does this for you). <br> Source on <a href="https://github.com/rkkeepstrack/looped">GitHub</a>.
 	</p>
 </main>
 </body>
