@@ -3,16 +3,15 @@
 Remaining work only. Completed plans were removed once shipped (see git history).
 Build/run/test and architecture live in the repo-root `CLAUDE.md`.
 
-Ordered, reviewable slices; 05/07 build on the shipped library+transport chain
-(01–03), 06 is a stretch:
+Ordered, reviewable slices; 07 builds on the shipped library+transport chain
+(01–03) + 05, 06 is a stretch:
 
-- **[05-loop-end-modes.md](05-loop-end-modes.md)** — end-of-track playthrough modes
-  (loop / advance / stop) behind one cycling icon button, sidebar-hosted for now. ⬜
 - **[06-library-persistence.md](06-library-persistence.md)** — persist the library
-  across launches (stretch; the app is unsandboxed, plain paths suffice). ⬜
+  across launches (stretch; the app is unsandboxed, plain paths suffice). Also picks
+  up the playthrough mode (session-only since 05). ⬜
 - **[07-controls-redesign.md](07-controls-redesign.md)** — slim centered bottom bar:
   split play/pause + stop + mode + open toolbar, rate/pitch VStack with yellow sync-link
-  icon, A/B marker labels, native menu bar. ⬜ (needs 05)
+  icon, A/B marker labels, native menu bar. ⬜
 - **[08-library-qol.md](08-library-qol.md)** — library QoL: ⌫/⌦ delete, drop below the
   list appends, animated drop hint while dragging. ⬜ (independent)
 - **[09-error-toasts.md](09-error-toasts.md)** — general error handling: themed toasts,
@@ -33,4 +32,5 @@ import (02: whole-window drop of files/folders, recursive expansion, targeted hi
 library transport (03: next/previous buttons, auto-advance at track end,
 `PlaybackCoordinator` store replacing the VM→VM bridge) · full-track preview strip
 (04: whole-song minimap under the waveform — box mirrors the viewport, box-drag
-scrubs and seeks on release, click seeks).
+scrubs and seeks on release, click seeks) · playthrough modes (05: loop / advance /
+stop at end of track, one cycling sidebar button, branch in `PlayerViewModel`).

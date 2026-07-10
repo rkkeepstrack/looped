@@ -28,8 +28,13 @@ final class PlayerViewModelTests {
 		try? FileManager.default.removeItem(at: fixture)
 	}
 
+	/// The coordinator behind the last-made view-model — end-of-track tests
+	/// drive its `tick()` directly.
+	private var transport: PlaybackCoordinator?
+
 	private func makeViewModel(files: AudioFileService = DefaultAudioFileService()) -> PlayerViewModel {
 		let transport = PlaybackCoordinator(playback: fake, files: files)
+		self.transport = transport
 		return PlayerViewModel(transport: transport, playback: fake, looping: DefaultLoopingService())
 	}
 
@@ -107,6 +112,61 @@ final class PlayerViewModelTests {
 		#expect(!vm.isPlaying)
 		#expect(vm.currentTime == 0)
 		#expect(fake.stopCount == 1)
+	}
+
+	// MARK: - Playthrough modes (end of track)
+
+	/// Run the clock past the end and tick the coordinator — the end-of-track
+	/// path the 0.03 s timer would drive.
+	private func reachEndOfTrack() {
+		fake.fakeCurrentTime = 2 // past the 1 s fixture
+		transport?.tick()
+	}
+
+	@Test func modeCyclesAdvanceStopLoop() async {
+		let vm = await loadedViewModel()
+		#expect(vm.playthroughMode == .advance) // the default
+
+		vm.cyclePlaythroughMode()
+		#expect(vm.playthroughMode == .stop)
+		vm.cyclePlaythroughMode()
+		#expect(vm.playthroughMode == .loop)
+		vm.cyclePlaythroughMode()
+		#expect(vm.playthroughMode == .advance)
+	}
+
+	@Test func stopModeEndsAtTheStart() async {
+		let vm = await loadedViewModel()
+		vm.playthroughMode = .stop
+		vm.togglePlayPause()
+
+		reachEndOfTrack()
+		#expect(!vm.isPlaying)
+		#expect(vm.currentTime == 0)
+		#expect(fake.playCount == 1) // no replay
+	}
+
+	@Test func loopModeRestartsTheTrack() async {
+		let vm = await loadedViewModel()
+		vm.playthroughMode = .loop
+		vm.togglePlayPause()
+
+		reachEndOfTrack()
+		#expect(vm.isPlaying)
+		#expect(fake.stopCount == 1) // the end-of-track stop reset the playhead…
+		#expect(fake.playCount == 2) // …and playback restarted from 0
+	}
+
+	@Test func advanceModeAsksTheLibraryForTheNextTrack() async {
+		let vm = await loadedViewModel()
+		vm.playthroughMode = .advance
+		var advanced = false
+		vm.onAdvanceToNextTrack = { advanced = true }
+		vm.togglePlayPause()
+
+		reachEndOfTrack()
+		#expect(advanced)
+		#expect(!vm.isPlaying) // the library drives what happens next
 	}
 
 	// MARK: - Seeking (jumpTo)

@@ -25,6 +25,9 @@
 - `LibraryStore` protocol + `JSONLibraryStore` (Services/, pure: `load() -> [Track] +
   selection`, `save(...)`) — injected into `LibraryViewModel`, faked in tests.
 - Don't auto-play on restore; just populate the list and highlight the last track.
+- Also persist the **playthrough mode** (plan 05's `PlaythroughMode` on `PlayerViewModel`) —
+  deliberately left session-only in 05 so all persistence lands here in one concept.
+  A `UserDefaults` scalar is fine (it doesn't need the JSON store).
 
 ## Steps
 

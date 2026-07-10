@@ -335,8 +335,9 @@ struct LibraryViewModelTests {
 	}
 
 	@Test func endOfTrackAutoAdvancesThroughTheWiring() async throws {
-		// The full loop: coordinator tick past duration → onTrackEnded →
-		// library.trackEnded() → next track loads and plays.
+		// The full loop in advance mode: coordinator tick past duration →
+		// (PlayerViewModel's branching, stubbed here) → library.trackEnded() →
+		// next track loads and plays.
 		let (library, player, playback) = try await loadedSUT(count: 2)
 		player.onTrackEnded = { Task { await library.trackEnded() } }
 		player.play()

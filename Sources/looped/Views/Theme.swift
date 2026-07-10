@@ -16,6 +16,10 @@ enum Theme {
 	static let surface = Color(red: 0.105, green: 0.105, blue: 0.118) // #1B1B1E
 	static let accent = Color(red: 1.0, green: 0.478, blue: 0.102) // #FF7A1A
 	static let accentDim = Color(red: 0.72, green: 0.34, blue: 0.07)
+	/// Warm yellow marking a control's active/engaged state (playthrough-mode
+	/// icon; plan 07's sync-link icon) — distinct from the accent orange so it
+	/// reads as state, not selection.
+	static let controlActive = Color(red: 1.0, green: 0.78, blue: 0.25) // #FFC740
 	static let textPrimary = Color(red: 0.96, green: 0.96, blue: 0.96)
 	static let textSecondary = Color(red: 0.60, green: 0.60, blue: 0.64)
 
