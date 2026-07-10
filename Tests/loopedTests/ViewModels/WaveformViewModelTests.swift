@@ -74,6 +74,39 @@ struct WaveformViewModelTests {
 		#expect(vm.centerTime(playbackTime: 12) == 9)
 	}
 
+	// MARK: - Overview (minimap) scrub
+
+	@Test func overviewDragScrubsTheViewportForward() {
+		let vm = makeViewModel()
+		// 100 s song on a 200 pt strip: dragging the box 20 pt right moves the
+		// viewport 10 s forward — a scrub (anchor latched), never a seek.
+		vm.overviewScrub(byStripDelta: 20, stripWidth: 200, duration: 100, playbackTime: 10)
+		#expect(vm.isScrolling)
+		#expect(vm.centerTime(playbackTime: 10) == 20)
+	}
+
+	@Test func overviewDragAccumulatesAcrossDeltas() {
+		let vm = makeViewModel()
+		vm.overviewScrub(byStripDelta: 10, stripWidth: 200, duration: 100, playbackTime: 10)
+		vm.overviewScrub(byStripDelta: -30, stripWidth: 200, duration: 100, playbackTime: 11)
+		// Anchor stays latched at the first call's playback time (10): +5 s − 15 s.
+		#expect(vm.centerTime(playbackTime: 11) == 0)
+	}
+
+	@Test func overviewDragWithZeroGeometryIsANoOp() {
+		let vm = makeViewModel()
+		vm.overviewScrub(byStripDelta: 20, stripWidth: 0, duration: 100, playbackTime: 10)
+		vm.overviewScrub(byStripDelta: 20, stripWidth: 200, duration: 0, playbackTime: 10)
+		#expect(!vm.isScrolling)
+		#expect(vm.currentScrollOffset == 0)
+	}
+
+	@Test func overviewSamplesDelegateToTheService() {
+		let vm = makeViewModel()
+		// Nothing analyzed yet → empty regardless of the requested width.
+		#expect(vm.overviewSamples(targetCount: 100) == [])
+	}
+
 	@Test func windowDelegatesToTheService() {
 		let vm = makeViewModel()
 		// No samples analyzed yet → silence window, but the geometry is the service's.

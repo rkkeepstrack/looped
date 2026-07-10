@@ -3,12 +3,9 @@
 Remaining work only. Completed plans were removed once shipped (see git history).
 Build/run/test and architecture live in the repo-root `CLAUDE.md`.
 
-Ordered, reviewable slices; 04 is independent, 05/07 build on the shipped
-library+transport chain (01–03), 06 is a stretch:
+Ordered, reviewable slices; 05/07 build on the shipped library+transport chain
+(01–03), 06 is a stretch:
 
-- **[04-full-track-preview.md](04-full-track-preview.md)** — whole-song minimap below
-  the waveform: highlight box mirrors the viewport, drag scrubs, click seeks. ⬜
-  (independent)
 - **[05-loop-end-modes.md](05-loop-end-modes.md)** — end-of-track playthrough modes
   (loop / advance / stop) behind one cycling icon button, sidebar-hosted for now. ⬜
 - **[06-library-persistence.md](06-library-persistence.md)** — persist the library
@@ -34,4 +31,6 @@ varispeed sync toggle · loop-point nudge arrows · track library (01: `Track` +
 `LibraryViewModel`, sidebar list, click-to-play, multi-select import) · drag & drop
 import (02: whole-window drop of files/folders, recursive expansion, targeted highlight) ·
 library transport (03: next/previous buttons, auto-advance at track end,
-`PlaybackCoordinator` store replacing the VM→VM bridge).
+`PlaybackCoordinator` store replacing the VM→VM bridge) · full-track preview strip
+(04: whole-song minimap under the waveform — box mirrors the viewport, box-drag
+scrubs and seeks on release, click seeks).

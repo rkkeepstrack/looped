@@ -84,6 +84,80 @@ struct WaveformServiceTests {
 		#expect(ahead.playheadX == 108) // (2000 - 88)/2 = 956 → clamped to width
 	}
 
+	// MARK: - Overview downsampling
+
+	@Test func overviewSamplesKeepPerBucketPeaks() {
+		// Samples are inverted dB (1 == silence, 0 == loudest): the bucket min —
+		// the loudest value — must survive.
+		let samples: [Float] = [1.0, 0.2, 0.9, 1.0, 1.0, 0.5, 0.8, 1.0]
+		let out = service.overviewSamples(samples: samples, targetCount: 2)
+		#expect(out == [0.2, 0.5])
+	}
+
+	@Test func overviewSamplesPassThroughWhenAlreadySmall() {
+		let samples: [Float] = [0.1, 0.2, 0.3]
+		#expect(service.overviewSamples(samples: samples, targetCount: 10) == samples)
+	}
+
+	@Test func overviewSamplesEdgeCases() {
+		#expect(service.overviewSamples(samples: [], targetCount: 10) == [])
+		#expect(service.overviewSamples(samples: [0.5, 0.6], targetCount: 0) == [])
+	}
+
+	@Test func overviewSamplesCoverEverySourceSample() {
+		// Uneven division (10 → 3): the buckets must tile the array with no gaps,
+		// so a single loud spike is caught wherever it sits.
+		for spike in 0 ..< 10 {
+			var samples = [Float](repeating: 1.0, count: 10)
+			samples[spike] = 0.0
+			let out = service.overviewSamples(samples: samples, targetCount: 3)
+			#expect(out.count == 3)
+			#expect(out.contains(0.0), "spike at \(spike) lost in downsampling")
+		}
+	}
+
+	// MARK: - Overview mapper (strip pixels ↔ song time)
+
+	@Test func overviewMapperMapsTimeToXAndBack() {
+		let mapper = OverviewMapper(stripWidth: 200, duration: 100)
+		#expect(mapper.x(forTime: 0) == 0)
+		#expect(mapper.x(forTime: 50) == 100)
+		#expect(mapper.x(forTime: 100) == 200)
+		#expect(mapper.time(forX: 100) == 50)
+	}
+
+	@Test func overviewMapperClampsTimeToSongBounds() {
+		let mapper = OverviewMapper(stripWidth: 200, duration: 100)
+		#expect(mapper.time(forX: -10) == 0)
+		#expect(mapper.time(forX: 250) == 100)
+	}
+
+	@Test func overviewMapperZeroGeometryIsSafe() {
+		#expect(OverviewMapper(stripWidth: 0, duration: 100).time(forX: 50) == 0)
+		#expect(OverviewMapper(stripWidth: 200, duration: 0).x(forTime: 5) == 0)
+		#expect(OverviewMapper(stripWidth: 200, duration: 0).box(centerTime: 0, visibleSeconds: 1).width == 0)
+	}
+
+	@Test func overviewMapperBoxCentersTheVisibleWindow() {
+		// 100 s song on 200 pt: 10 visible seconds centered at 50 → [45, 55] s → x 90, width 20.
+		let mapper = OverviewMapper(stripWidth: 200, duration: 100)
+		let box = mapper.box(centerTime: 50, visibleSeconds: 10)
+		#expect(box.x == 90)
+		#expect(abs(box.width - 20) < 0.0001)
+	}
+
+	@Test func overviewMapperBoxShrinksAtTheSongEdges() {
+		let mapper = OverviewMapper(stripWidth: 200, duration: 100)
+		// Centered at t=0 only the forward half is inside the song.
+		let start = mapper.box(centerTime: 0, visibleSeconds: 10)
+		#expect(start.x == 0)
+		#expect(start.width == 10)
+		// Centered at the end, only the trailing half.
+		let end = mapper.box(centerTime: 100, visibleSeconds: 10)
+		#expect(end.x == 190)
+		#expect(end.width == 10)
+	}
+
 	@Test func chunkXInvertsBackToPixels() {
 		// At the center time, chunkX must equal the (unclamped) playhead position.
 		#expect(service.chunkX(time: 1.0, layout: layout, chunkStartSample: 88) == 56)

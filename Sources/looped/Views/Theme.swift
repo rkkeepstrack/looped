@@ -38,6 +38,17 @@ enum Theme {
 	/// the waveform drop zone (drop → load immediately).
 	static let waveformDropHighlight = Color(white: 0.85).opacity(0.18)
 
+	// MARK: Overview strip (minimap)
+
+	/// Fixed height of the full-track overview strip under the main waveform.
+	static let overviewHeight: CGFloat = 48
+	/// Played tint on the overview strip — much subtler than the main waveform's
+	/// full-accent orange, which reads harsh at strip size.
+	static let overviewPlayed = accentDim.opacity(0.45)
+	/// The visible-window highlight box on the overview strip.
+	static let overviewBoxFill = Color(white: 0.85).opacity(0.12)
+	static let overviewBoxStroke = Color(white: 0.85).opacity(0.45)
+
 	// MARK: Metrics
 
 	/// Default sidebar width; the user can drag the divider between
