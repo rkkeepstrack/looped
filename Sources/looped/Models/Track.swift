@@ -15,6 +15,8 @@ struct Track: Identifiable, Equatable {
 	let title: String
 	/// Container-reported duration for the list row; nil when unreadable.
 	let duration: TimeInterval?
+	/// This track's remembered slider state (rate/pitch/volume/sync).
+	var parameters = TrackParameters()
 
 	/// The audio types the app accepts — the single predicate shared by the
 	/// open panel, `LibraryViewModel.add(urls:)`, and drag & drop.

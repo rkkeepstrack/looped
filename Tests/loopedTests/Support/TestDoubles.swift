@@ -94,6 +94,23 @@ final class FakePlaybackService: PlaybackService {
 	}
 }
 
+/// An in-memory `LibraryStore`: preload `snapshot` to drive `restore()`, and
+/// inspect `saved` / `saveCount` to assert persistence without touching disk.
+final class FakeLibraryStore: LibraryStore {
+	var snapshot: LibrarySnapshot?
+	private(set) var saved: LibrarySnapshot?
+	private(set) var saveCount = 0
+
+	func load() -> LibrarySnapshot? {
+		snapshot
+	}
+
+	func save(_ snapshot: LibrarySnapshot) {
+		saved = snapshot
+		saveCount += 1
+	}
+}
+
 /// An `AudioFileService` that always rejects the load as too long — for exercising
 /// the `PlayerViewModel.loadError` path without a real 20-minute file.
 struct TooLongAudioFileService: AudioFileService {

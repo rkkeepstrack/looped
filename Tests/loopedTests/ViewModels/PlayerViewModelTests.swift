@@ -32,10 +32,14 @@ final class PlayerViewModelTests {
 	/// drive its `tick()` directly.
 	private var transport: PlaybackCoordinator?
 
+	/// Ephemeral, per-instance UserDefaults so the playthrough-mode persistence
+	/// never touches (or reads) the test host's real defaults.
+	private let defaults = UserDefaults(suiteName: "loopedTests-\(UUID().uuidString)")!
+
 	private func makeViewModel(files: AudioFileService = DefaultAudioFileService()) -> PlayerViewModel {
 		let transport = PlaybackCoordinator(playback: fake, files: files)
 		self.transport = transport
-		return PlayerViewModel(transport: transport, playback: fake, looping: DefaultLoopingService())
+		return PlayerViewModel(transport: transport, playback: fake, looping: DefaultLoopingService(), defaults: defaults)
 	}
 
 	/// A view-model with the spy player and a really-decoded 1 s track loaded.
@@ -115,6 +119,35 @@ final class PlayerViewModelTests {
 	}
 
 	// MARK: - Playthrough modes (end of track)
+
+	@Test func playthroughModePersistsAcrossViewModelInstances() {
+		let vm = makeViewModel()
+		vm.playthroughMode = .loop
+
+		#expect(makeViewModel().playthroughMode == .loop)
+	}
+
+	@Test func currentParametersRoundTripAndDriveTheEngine() {
+		let vm = makeViewModel()
+		let parameters = TrackParameters(rate: 1.5, pitchSemitones: -3, volume: 0.6, syncPitchAndRate: false)
+
+		vm.currentParameters = parameters
+
+		#expect(vm.currentParameters == parameters)
+		#expect(fake.lastRate == 1.5)
+		#expect(fake.lastPitchCents == -300)
+		#expect(fake.lastVolume == 0.6)
+	}
+
+	@Test func applyingSyncedParametersDrivesTheVarispeedUnit() {
+		let vm = makeViewModel()
+
+		vm.currentParameters = TrackParameters(rate: 2, pitchSemitones: 0, volume: 1, syncPitchAndRate: true)
+
+		#expect(fake.lastVarispeed == 2)
+		#expect(fake.lastRate == 1) // time-pitch unit neutralized
+		#expect(fake.lastPitchCents == 0)
+	}
 
 	/// Run the clock past the end and tick the coordinator — the end-of-track
 	/// path the 0.03 s timer would drive.
@@ -298,7 +331,8 @@ final class PlayerViewModelTests {
 		let vm = await loadedViewModel()
 		vm.rate = 1.5
 		vm.updateRate()
-		vm.updateVolume(volume: 0.25)
+		vm.volume = 0.25
+		vm.updateVolume()
 
 		#expect(abs((fake.lastRate ?? -1) - 1.5) <= 1e-6)
 		#expect(abs((fake.lastVolume ?? -1) - 0.25) <= 1e-6)

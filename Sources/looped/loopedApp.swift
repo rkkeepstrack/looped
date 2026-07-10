@@ -32,13 +32,22 @@ struct loopedApp: App {
 		)
 		let library = LibraryViewModel(
 			player: transport,
-			dropped: DefaultDroppedFileService()
+			dropped: DefaultDroppedFileService(),
+			store: JSONLibraryStore()
 		)
 		// Advance mode: end-of-track → the library picks and plays the next track.
 		// (The mode branching itself lives in PlayerViewModel.trackEnded.)
 		// Weak: the player must not retain the library.
 		player.onAdvanceToNextTrack = { [weak library] in
 			Task { await library?.trackEnded() }
+		}
+		// Per-track slider state: the library stashes/applies it on track
+		// switches; the values themselves live in the player VM.
+		library.captureParameters = { [weak player] in
+			player?.currentParameters ?? TrackParameters()
+		}
+		library.applyParameters = { [weak player] in
+			player?.currentParameters = $0
 		}
 		_player = StateObject(wrappedValue: player)
 		_library = StateObject(wrappedValue: library)
@@ -47,6 +56,7 @@ struct loopedApp: App {
 	var body: some Scene {
 		WindowGroup {
 			ContentView()
+				.task { await library.restore() }
 				.environmentObject(player)
 				.environmentObject(library)
 				.environmentObject(waveform)
