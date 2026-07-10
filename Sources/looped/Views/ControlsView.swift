@@ -7,59 +7,92 @@
 
 import SwiftUI
 
+/// Aligns the slider *tracks* (not the label+slider stacks — the labels sit on
+/// top and would drag the geometric center down) with the transport row.
+/// `CompactSlider` marks its track; everything else falls back to its center.
+private extension VerticalAlignment {
+	enum ControlRow: AlignmentID {
+		static func defaultValue(in context: ViewDimensions) -> CGFloat {
+			context[VerticalAlignment.center]
+		}
+	}
+
+	static let controlRow = VerticalAlignment(ControlRow.self)
+}
+
 struct ControlsView: View {
 	@EnvironmentObject var audioPlayer: PlayerViewModel
 	@EnvironmentObject var library: LibraryViewModel
 	@EnvironmentObject var offsetCalculator: WaveformViewModel
 
 	var body: some View {
-		// Sliders pinned left, loop panel pinned right, transport centered over the
-		// content column (independent of the side elements' widths) — so it stays
-		// centered as the sidebar pushes everything right.
-		ZStack {
-			HStack(spacing: 24) {
-				sliders
-				Spacer()
-				LoopPanel()
+		// The transport is pinned to the exact viewport center (both side slots
+		// get equal flexible width); sliders and loop panel hug it from either side.
+		HStack(alignment: .controlRow, spacing: 44) {
+			HStack(alignment: .controlRow, spacing: 28) {
+				volumeSlider
+				ratePitchCluster
 			}
+			.frame(maxWidth: .infinity, alignment: .trailing)
+
 			transport
+
+			LoopPanel()
+				.frame(maxWidth: .infinity, alignment: .leading)
 		}
-		.padding()
+		.padding(.horizontal)
+		.padding(.vertical, 16)
 	}
 
-	// MARK: Bottom-left — Volume + Rate + Pitch (+ sync)
+	// MARK: Sliders — volume + the rate/pitch pair with the sync link
 
-	private var sliders: some View {
-		VStack(spacing: 10) {
-			CompactSlider(label: "Volume", value: volumeBinding, defaultValue: 1.0, format: { v in
-				"\(Int((v * 100).rounded())) %"
-			}) { _ in
-				audioPlayer.updateVolume()
-			}
-			CompactSlider(label: audioPlayer.syncPitchAndRate ? "Speed" : "Rate", value: ratePositionBinding, defaultValue: 0.5, format: { pos in
-				String(format: "%.2f×", 0.5 * pow(4, pos))
-			}) { _ in
-				audioPlayer.updateRate()
-			}
-			CompactSlider(label: "Pitch", value: pitchBinding, range: -12 ... 12, defaultValue: 0, format: { st in
-				String(format: "%+d st", Int(st.rounded()))
-			}) { _ in
-				audioPlayer.updatePitch()
-			}
-			.disabled(audioPlayer.syncPitchAndRate)
-			.opacity(audioPlayer.syncPitchAndRate ? 0.5 : 1)
-
-			// Synced = tape-style varispeed: the Speed slider moves tempo + pitch
-			// together (artifact-free); the Pitch slider shows the implied shift.
-			Toggle("Sync pitch & rate", isOn: Binding(
-				get: { audioPlayer.syncPitchAndRate },
-				set: { audioPlayer.updateSync($0) }
-			))
-			.toggleStyle(.checkbox)
-			.font(.caption)
-			.foregroundStyle(Theme.textSecondary)
-			.help("One slider drives speed and pitch together (tape-style, highest quality)")
+	/// Range 0…2: above 100 % the engine boosts (up to +6 dB) with a peak
+	/// limiter guarding against clipping — headroom for quiet material.
+	private var volumeSlider: some View {
+		CompactSlider(label: "Volume", value: volumeBinding, range: 0 ... 2, defaultValue: 1.0, format: { v in
+			"\(Int((v * 100).rounded())) %"
+		}) { _ in
+			audioPlayer.updateVolume()
 		}
+	}
+
+	/// Independent mode: Rate + Pitch stacked. Synced: the pair collapses into a
+	/// single Speed slider (tempo + pitch move together, nothing else to show).
+	private var ratePitchCluster: some View {
+		HStack(alignment: .controlRow, spacing: 6) {
+			VStack(spacing: 6) {
+				CompactSlider(label: audioPlayer.syncPitchAndRate ? "Speed" : "Rate", value: ratePositionBinding, defaultValue: 0.5, format: { pos in
+					String(format: "%.2f×", 0.5 * pow(4, pos))
+				}) { _ in
+					audioPlayer.updateRate()
+				}
+				if !audioPlayer.syncPitchAndRate {
+					CompactSlider(label: "Pitch", value: pitchBinding, range: -12 ... 12, defaultValue: 0, format: { st in
+						String(format: "%+d st", Int(st.rounded()))
+					}) { _ in
+						audioPlayer.updatePitch()
+					}
+				}
+			}
+			syncButton
+		}
+	}
+
+	/// The sync toggle beside the sliders — a lock ("pitch locked to speed"),
+	/// closed and yellow while synced (tape-style varispeed: the Speed slider
+	/// moves tempo + pitch together).
+	private var syncButton: some View {
+		Button {
+			audioPlayer.updateSync(!audioPlayer.syncPitchAndRate)
+		} label: {
+			Image(systemName: audioPlayer.syncPitchAndRate ? "lock.fill" : "lock.open")
+				.font(.body)
+				.foregroundStyle(audioPlayer.syncPitchAndRate ? Theme.controlActive : Theme.textSecondary)
+				.frame(width: 24, height: 24)
+		}
+		.buttonStyle(.borderless)
+		.hoverHighlight()
+		.help("Sync pitch & rate: one slider drives speed and pitch together (tape-style, highest quality)")
 	}
 
 	// The view-model is the source of truth for all slider values (they are
@@ -81,62 +114,56 @@ struct ControlsView: View {
 		)
 	}
 
-	/// While synced, the (disabled) pitch slider tracks the shift the varispeed
-	/// implies; user edits only flow in independent mode.
 	private var pitchBinding: Binding<Double> {
 		Binding(
-			get: {
-				Double(audioPlayer.syncPitchAndRate ? audioPlayer.impliedSyncSemitones : audioPlayer.pitchSemitones)
-			},
+			get: { Double(audioPlayer.pitchSemitones) },
 			set: { audioPlayer.pitchSemitones = Float($0.rounded()) }
 		)
 	}
 
-	// MARK: Bottom-center — transport
+	// MARK: Transport toolbar
 
 	private var transport: some View {
-		HStack(spacing: 14) {
-			Button {
-				Task { await library.previous() }
-			} label: {
-				Image(systemName: "backward.fill")
-					.frame(width: 28, height: 24)
-			}
-			.buttonStyle(.bordered)
-			.controlSize(.large)
-			.disabled(library.tracks.count < 2)
-			.help("Previous track (restarts when > 3 s in)")
-
-			Button {
-				audioPlayer.togglePlayPause()
-			} label: {
-				Image(systemName: audioPlayer.isPlaying ? "pause.fill" : "play.fill")
-					.frame(width: 28, height: 24)
-			}
-			.buttonStyle(.borderedProminent)
-			.tint(Theme.accent)
-			.controlSize(.large)
-
-			Button {
-				Task { await library.next() }
-			} label: {
-				Image(systemName: "forward.fill")
-					.frame(width: 28, height: 24)
-			}
-			.buttonStyle(.bordered)
-			.controlSize(.large)
-			.disabled(library.tracks.count < 2)
-			.help("Next track")
-
-			Button {
+		HStack(spacing: 10) {
+			transportButton("stop.fill", help: "Stop and reset to the start") {
 				audioPlayer.stop()
 				offsetCalculator.currentScrollOffset = 0
-			} label: {
-				Image(systemName: "stop.fill")
-					.frame(width: 28, height: 24)
 			}
-			.buttonStyle(.bordered)
-			.controlSize(.large)
+
+			transportButton("play.fill", help: "Play (restarts when already playing)", prominent: true) {
+				audioPlayer.play()
+			}
+
+			transportButton("pause.fill", help: "Pause") {
+				audioPlayer.pause()
+			}
+
+			transportButton("backward.fill", help: "Previous track (restarts when > 3 s in)") {
+				Task { await library.previous() }
+			}
+			.disabled(library.tracks.count < 2)
+
+			transportButton("forward.fill", help: "Next track") {
+				Task { await library.next() }
+			}
+			.disabled(library.tracks.count < 2)
+
+			PlaythroughModeButton()
+		}
+	}
+
+	@ViewBuilder
+	private func transportButton(_ symbol: String, help: String, prominent: Bool = false, action: @escaping () -> Void) -> some View {
+		let button = Button(action: action) {
+			Image(systemName: symbol)
+				.frame(width: 24, height: 18)
+		}
+		.help(help)
+
+		if prominent {
+			button.buttonStyle(.borderedProminent).tint(Theme.accent).hoverBrightness()
+		} else {
+			button.buttonStyle(.bordered).hoverBrightness()
 		}
 	}
 }
@@ -155,78 +182,77 @@ private struct CompactSlider: View {
 	var onChange: (Double) -> Void
 
 	@State private var isDragging = false
-	@State private var isHoveringLabel = false
-
-	/// Dragging wins (live value), then hover ("Reset"), then the plain label.
-	private var labelText: String {
-		if isDragging { return format(value) }
-		return isHoveringLabel ? "Reset" : label
-	}
 
 	var body: some View {
-		VStack(spacing: 4) {
-			Text(labelText)
-				.font(.caption)
-				.foregroundStyle(isDragging || isHoveringLabel ? Theme.textPrimary : Theme.textSecondary)
-				.monospacedDigit()
-				.contentShape(Rectangle())
-				.onHover { isHoveringLabel = $0 }
-				.onTapGesture { value = defaultValue }
-				.help("Reset to default")
+		VStack(spacing: 2) {
+			// Dragging wins (live value), then hover ("Reset"), then the label.
+			HoverActionLabel(title: label, overrideText: isDragging ? format(value) : nil) {
+				value = defaultValue
+			}
+			.help("Reset to default")
 			Slider(value: $value, in: range) { editing in
 				isDragging = editing
 			}
-			.controlSize(.small)
+			.controlSize(.mini)
 			.tint(Theme.accent)
 			.onChange(of: value) { _, newValue in onChange(newValue) }
+			.alignmentGuide(.controlRow) { $0[VerticalAlignment.center] }
 		}
-		.frame(width: 190)
+		.frame(width: 150)
+		.onRightClick { value = defaultValue }
 	}
 }
 
-// MARK: - Loop panel (bottom-right card)
+// MARK: - Loop panel (A·B)
 
-/// A/B loop points + reset, in their own card. The `«`/`»` arrows nudge the set
-/// point by ±0.05 s; disabled while unset.
+/// A/B loop points with nudge arrows (±0.05 s, disabled while unset); the
+/// title doubles as the reset control (hover → "Reset").
 private struct LoopPanel: View {
 	@EnvironmentObject var audioPlayer: PlayerViewModel
 
 	var body: some View {
-		VStack(spacing: 8) {
-			Text("Loop")
-				.font(.caption.weight(.semibold))
-				.foregroundStyle(Theme.textSecondary)
-
-			loopRow(symbol: "a.circle", isSet: audioPlayer.loopStart.1 != nil, set: {
-				audioPlayer.setLoopStart(time: audioPlayer.currentTime)
-			}, nudge: { delta in
-				audioPlayer.nudgeLoopStart(by: delta)
-			})
-			loopRow(symbol: "b.circle", isSet: audioPlayer.loopEnd.1 != nil, set: {
-				audioPlayer.setLoopEnd(time: audioPlayer.currentTime)
-			}, nudge: { delta in
-				audioPlayer.nudgeLoopEnd(by: delta)
-			})
-
-			Button("Reset Loop") {
-				audioPlayer.setLoopStart(time: nil)
-				audioPlayer.setLoopEnd(time: nil)
+		VStack(spacing: 4) {
+			// Same affordance as the slider labels: the title turns into "Reset"
+			// on hover; clicking clears both points.
+			HoverActionLabel(title: "Loop Points") {
+				audioPlayer.clearLoopPoints()
 			}
-			.buttonStyle(.borderless)
-			.font(.caption)
+			.help("Reset loop points")
+
+			loopRows
 		}
-		.padding(12)
+		.padding(.horizontal, 24)
+		.padding(.vertical, 8)
 		.background(RoundedRectangle(cornerRadius: Theme.panelCorner).fill(Theme.surface))
 		.overlay(RoundedRectangle(cornerRadius: Theme.panelCorner).stroke(Theme.panelBorder))
+	}
+
+	@ViewBuilder
+	private var loopRows: some View {
+		loopRow(symbol: "a.circle", color: Theme.loopMarkerA, isSet: audioPlayer.loopStart.1 != nil, set: {
+			audioPlayer.setLoopStart(time: audioPlayer.currentTime)
+		}, clear: {
+			audioPlayer.setLoopStart(time: nil)
+		}, nudge: { delta in
+			audioPlayer.nudgeLoopStart(by: delta)
+		})
+		loopRow(symbol: "b.circle", color: Theme.loopMarkerB, isSet: audioPlayer.loopEnd.1 != nil, set: {
+			audioPlayer.setLoopEnd(time: audioPlayer.currentTime)
+		}, clear: {
+			audioPlayer.setLoopEnd(time: nil)
+		}, nudge: { delta in
+			audioPlayer.nudgeLoopEnd(by: delta)
+		})
 	}
 
 	/// Per-click nudge step for the chevron buttons.
 	private static let nudgeStep: TimeInterval = 0.05
 
-	private func loopRow(symbol: String, isSet: Bool, set: @escaping () -> Void, nudge: @escaping (TimeInterval) -> Void) -> some View {
+	private func loopRow(symbol: String, color: Color, isSet: Bool, set: @escaping () -> Void, clear: @escaping () -> Void, nudge: @escaping (TimeInterval) -> Void) -> some View {
 		HStack(spacing: 8) {
 			Button { nudge(-Self.nudgeStep) } label: { Image(systemName: "chevron.backward.2") }
 				.buttonStyle(.borderless)
+				.hoverHighlight()
 				.disabled(!isSet)
 				.help("Nudge earlier by 0.05 s")
 
@@ -235,10 +261,14 @@ private struct LoopPanel: View {
 					.font(.title3)
 			}
 			.buttonStyle(.borderless)
-			.foregroundStyle(isSet ? Theme.accent : Theme.textPrimary)
+			.foregroundStyle(isSet ? color : Theme.textPrimary)
+			.hoverHighlight()
+			.onRightClick { if isSet { clear() } }
+			.help("Set to the current time; right-click to clear")
 
 			Button { nudge(Self.nudgeStep) } label: { Image(systemName: "chevron.forward.2") }
 				.buttonStyle(.borderless)
+				.hoverHighlight()
 				.disabled(!isSet)
 				.help("Nudge later by 0.05 s")
 		}

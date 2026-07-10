@@ -106,18 +106,50 @@ final class LibraryViewModel: ObservableObject {
 	/// Multi-select open panel → `add(urls:)`. If the library was empty,
 	/// auto-load the first added track (into the waveform; playback stays paused).
 	func openFiles() async {
-		let urls: [URL] = await MainActor.run {
-			let panel = NSOpenPanel()
-			panel.allowedContentTypes = Track.supportedTypes
-			panel.allowsMultipleSelection = true
-			return panel.runModal() == .OK ? panel.urls : []
-		}
+		let urls = await presentOpenPanel(forFolders: false)
 		guard !urls.isEmpty else { return }
 
 		let wasEmpty = await MainActor.run { tracks.isEmpty }
 		await add(urls: urls)
 		if wasEmpty, let first = await MainActor.run(body: { tracks.first }) {
 			await load(first)
+		}
+	}
+
+	/// The transport's open button / File ▸ Open… (⌘O): multi-select panel →
+	/// `add(urls:)`, then load the first chosen track into the waveform
+	/// (already-present tracks aren't duplicated; no autoplay).
+	func openFilesAndLoad() async {
+		let urls = await presentOpenPanel(forFolders: false)
+		guard !urls.isEmpty else { return }
+
+		await add(urls: urls)
+		let chosen = Set(urls.map { $0.standardizedFileURL })
+		let track = await MainActor.run {
+			tracks.first { chosen.contains($0.url.standardizedFileURL) }
+		}
+		if let track { await load(track) }
+	}
+
+	/// The sidebar's "Import Folder" button: choose a directory, then reuse the
+	/// drop path (recursive expansion to the supported audio files inside).
+	func openFolder() async {
+		let urls = await presentOpenPanel(forFolders: true)
+		guard !urls.isEmpty else { return }
+		await addDropped(urls: urls)
+	}
+
+	private func presentOpenPanel(forFolders folders: Bool) async -> [URL] {
+		await MainActor.run {
+			let panel = NSOpenPanel()
+			panel.allowsMultipleSelection = true
+			if folders {
+				panel.canChooseDirectories = true
+				panel.canChooseFiles = false
+			} else {
+				panel.allowedContentTypes = Track.supportedTypes
+			}
+			return panel.runModal() == .OK ? panel.urls : []
 		}
 	}
 

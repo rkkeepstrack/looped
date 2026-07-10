@@ -3,12 +3,8 @@
 Remaining work only. Completed plans were removed once shipped (see git history).
 Build/run/test and architecture live in the repo-root `CLAUDE.md`.
 
-Ordered, reviewable slices; 07 builds on the shipped library+transport chain
-(01–03) + 05:
+Ordered, reviewable slices:
 
-- **[07-controls-redesign.md](07-controls-redesign.md)** — slim centered bottom bar:
-  split play/pause + stop + mode + open toolbar, rate/pitch VStack with yellow sync-link
-  icon, A/B marker labels, native menu bar. ⬜
 - **[08-library-qol.md](08-library-qol.md)** — library QoL: ⌫/⌦ delete, drop below the
   list appends, animated drop hint while dragging. ⬜ (independent)
 - **[09-error-toasts.md](09-error-toasts.md)** — general error handling: themed toasts,
@@ -32,4 +28,6 @@ library transport (03: next/previous buttons, auto-advance at track end,
 scrubs and seeks on release, click seeks) · playthrough modes (05: loop / advance /
 stop at end of track, one cycling sidebar button, branch in `PlayerViewModel`) ·
 library persistence (06: JSON `LibraryStore` — list, selection, per-track slider
-values — restored on launch; playthrough mode in `UserDefaults`).
+values — restored on launch; playthrough mode in `UserDefaults`) · controls redesign
+(07: slim bottom bar with viewport-centered split play/pause + mode transport, sync-link
+icon, sidebar import-folder button, native menu bar with File ▸ Open… ⌘O + Playback menu).

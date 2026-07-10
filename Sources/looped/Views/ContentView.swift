@@ -43,11 +43,11 @@ struct ContentView: View {
 				Image(systemName: "sidebar.leading").font(.title3)
 			}
 			.buttonStyle(.borderless)
+			.hoverHighlight()
 			.help("Toggle sidebar")
 			.padding(10)
 		}
-		// Keyboard shortcuts (spacebar → play/pause)
-		.background(KeyboardHandler(audioPlayer: audioPlayer))
+		.keyboardShortcuts(player: audioPlayer, toggleSidebar: { sidebarOpen.toggle() })
 	}
 
 	// MARK: Sidebar resize
@@ -101,7 +101,7 @@ struct ContentView: View {
 	/// waveform gets a translucent light-gray wash; dropping loads the file
 	/// immediately (the library zone — the sidebar list — only inserts).
 	private var waveformDropZone: some View {
-		WaveformDisplayView()
+		LiveWaveformView()
 			.overlay {
 				if waveformDropTargeted {
 					Rectangle()

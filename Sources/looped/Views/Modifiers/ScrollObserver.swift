@@ -1,9 +1,21 @@
 import AppKit
 import SwiftUI
 
-/// A SwiftUI view that captures global scroll events (trackpad or mouse wheel)
-/// **and** horizontal mouse‑dragging to modify an offset.
-struct ScrollObserverView: NSViewRepresentable {
+extension View {
+	/// Overlays a transparent capture layer feeding scroll-wheel/trackpad and
+	/// horizontal mouse-drag deltas into `offset` (the waveform scrub).
+	func observeScrolling(
+		offset: Binding<CGFloat>,
+		onChange: ((CGFloat) -> Void)? = nil,
+		onEnd: (() -> Void)? = nil
+	) -> some View {
+		overlay(ScrollObserverView(offset: offset, onScrollChange: onChange, onScrollEnd: onEnd))
+	}
+}
+
+/// The capture layer behind `observeScrolling`: receives scroll events
+/// (trackpad or mouse wheel) **and** horizontal mouse-dragging.
+private struct ScrollObserverView: NSViewRepresentable {
 	@Binding var offset: CGFloat
 	var onScrollChange: ((CGFloat) -> Void)? = nil
 	var onScrollEnd: (() -> Void)? = nil

@@ -3,7 +3,7 @@
 //  looped
 //
 //  The audio "player": owns the AVAudioEngine graph
-//  (AVAudioPlayerNode → AVAudioUnitTimePitch → mainMixerNode) and the transport
+//  (player → timePitch → varispeed → eq → limiter → mainMixer) and the transport
 //  (play/pause/stop/seek), loop scheduling, and the playback clock. No SwiftUI,
 //  no @Published — it's a plain service the view-model drives and can be mocked.
 //
@@ -22,6 +22,9 @@ protocol PlaybackService: AnyObject {
 	func scheduleLoop(_ buffer: AVAudioPCMBuffer, startTime: TimeInterval, length: TimeInterval)
 	/// Leave loop mode and resume normal full-file playback from `time`.
 	func clearLoop(resumeAt time: TimeInterval)
+	/// Seek within the armed loop (`time` in [A, B]) without leaving loop mode;
+	/// no-op when not looping.
+	func seekInLoop(to time: TimeInterval)
 	/// Jump back to the armed loop's A point (stays looping); no-op when not looping.
 	func restartLoop()
 	var isLooping: Bool { get }
@@ -34,6 +37,8 @@ protocol PlaybackService: AnyObject {
 	/// Tape-style speed: tempo + pitch together via plain resampling (varispeed
 	/// unit; artifact-free) — used by the synced pitch/rate mode.
 	func setVarispeed(_ rate: Float)
+	/// Linear gain 0…2: ≤ 1 attenuates the player node, > 1 boosts via the EQ's
+	/// global gain (capped at +6 dB); a peak limiter downstream catches clipping.
 	func setVolume(_ volume: Float)
 }
 
@@ -42,6 +47,16 @@ final class AVPlaybackService: PlaybackService {
 	private let player = AVAudioPlayerNode()
 	private let timePitch = AVAudioUnitTimePitch()
 	private let varispeed = AVAudioUnitVarispeed()
+	/// Volume headroom: `globalGain` carries the boost above 1× (no bands used).
+	private let eq = AVAudioUnitEQ(numberOfBands: 0)
+	/// Apple's PeakLimiter — keeps the boosted signal from clipping.
+	private let limiter = AVAudioUnitEffect(audioComponentDescription: AudioComponentDescription(
+		componentType: kAudioUnitType_Effect,
+		componentSubType: kAudioUnitSubType_PeakLimiter,
+		componentManufacturer: kAudioUnitManufacturer_Apple,
+		componentFlags: 0,
+		componentFlagsMask: 0
+	))
 
 	private var file: AVAudioFile?
 	private var isScheduled = false
@@ -54,21 +69,34 @@ final class AVPlaybackService: PlaybackService {
 	private(set) var isLooping = false
 	private var loopStartTime: TimeInterval = 0
 	private var loopLength: TimeInterval = 0
+	/// Where in the loop the render clock started (an in-loop seek schedules the
+	/// buffer tail first, so elapsed 0 ≠ the A point) — folded into `currentTime`.
+	private var loopPhaseOffset: TimeInterval = 0
 
-	init() {
+	/// Buffer DSP (the in-loop seek's tail slice) — injected so all buffer
+	/// copying lives in one service.
+	private let looping: LoopingService
+
+	init(looping: LoopingService = DefaultLoopingService()) {
+		self.looping = looping
 		engine.attach(player)
 		engine.attach(timePitch)
 		engine.attach(varispeed)
+		engine.attach(eq)
+		engine.attach(limiter)
 		connectGraph(format: nil)
 		do { try engine.start() } catch { print("Engine failed: \(error)") }
 	}
 
-	/// `player → timePitch → varispeed → mainMixer`. Both effect units stay in the
-	/// graph permanently; the inactive one is kept neutral (rate 1 / pitch 0).
+	/// `player → timePitch → varispeed → eq → limiter → mainMixer`. All units stay
+	/// in the graph permanently; the inactive effect is kept neutral (rate 1 /
+	/// pitch 0 / gain 0), the limiter only acts when the boosted signal peaks.
 	private func connectGraph(format: AVAudioFormat?) {
 		engine.connect(player, to: timePitch, format: format)
 		engine.connect(timePitch, to: varispeed, format: format)
-		engine.connect(varispeed, to: engine.mainMixerNode, format: format)
+		engine.connect(varispeed, to: eq, format: format)
+		engine.connect(eq, to: limiter, format: format)
+		engine.connect(limiter, to: engine.mainMixerNode, format: format)
 	}
 
 	// MARK: - Source
@@ -147,6 +175,7 @@ final class AVPlaybackService: PlaybackService {
 		isLooping = true
 		loopStartTime = startTime
 		loopLength = length
+		loopPhaseOffset = 0
 
 		player.stop()
 		player.scheduleBuffer(buffer, at: nil, options: [.loops], completionHandler: nil)
@@ -166,6 +195,32 @@ final class AVPlaybackService: PlaybackService {
 	func restartLoop() {
 		guard isLooping, let loopBuffer else { return }
 		scheduleLoop(loopBuffer, startTime: loopStartTime, length: loopLength)
+	}
+
+	func seekInLoop(to time: TimeInterval) {
+		guard isLooping, let loopBuffer, loopLength > 0 else { return }
+		let clamped = min(max(time, loopStartTime), loopStartTime + loopLength)
+		let offsetFrames = AVAudioFramePosition((clamped - loopStartTime) * loopBuffer.format.sampleRate)
+
+		let wasPlaying = player.isPlaying
+		player.stop()
+
+		// Play the rest of the current iteration once, then fall into the
+		// regular looping buffer — seamless, and the phase offset keeps the
+		// reported clock aligned.
+		if offsetFrames > 0, offsetFrames < AVAudioFramePosition(loopBuffer.frameLength),
+		   let tail = looping.slice(loopBuffer, from: AVAudioFrameCount(offsetFrames))
+		{
+			player.scheduleBuffer(tail, at: nil, completionHandler: nil)
+			loopPhaseOffset = clamped - loopStartTime
+		} else {
+			loopPhaseOffset = 0
+		}
+		player.scheduleBuffer(loopBuffer, at: nil, options: [.loops], completionHandler: nil)
+		isScheduled = true
+		lastPausedTime = clamped
+
+		if wasPlaying { player.play() }
 	}
 
 	// MARK: - Clock
@@ -210,7 +265,7 @@ final class AVPlaybackService: PlaybackService {
 		// While looping, the render clock keeps counting across iterations; fold it
 		// back into the [A, B] window so the reported time stays in range.
 		if isLooping, loopLength > 0 {
-			return loopStartTime + elapsed.truncatingRemainder(dividingBy: loopLength)
+			return loopStartTime + (loopPhaseOffset + elapsed).truncatingRemainder(dividingBy: loopLength)
 		}
 		return lastPausedTime + elapsed
 	}
@@ -230,6 +285,9 @@ final class AVPlaybackService: PlaybackService {
 	}
 
 	func setVolume(_ volume: Float) {
-		player.volume = volume
+		// Split the linear 0…2 gain: the player node attenuates (its volume is a
+		// 0…1 mix gain), the EQ's global gain boosts — capped at +6 dB (2×).
+		player.volume = min(volume, 1)
+		eq.globalGain = volume > 1 ? min(20 * log10(volume), 6) : 0
 	}
 }

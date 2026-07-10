@@ -20,7 +20,8 @@ struct loopedApp: App {
 		// controls like the playthrough-mode button. `register` doesn't persist.
 		UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 500])
 
-		let playback = AVPlaybackService()
+		let looping = DefaultLoopingService()
+		let playback = AVPlaybackService(looping: looping)
 		let transport = PlaybackCoordinator(
 			playback: playback,
 			files: DefaultAudioFileService()
@@ -28,7 +29,7 @@ struct loopedApp: App {
 		let player = PlayerViewModel(
 			transport: transport,
 			playback: playback,
-			looping: DefaultLoopingService()
+			looping: looping
 		)
 		let library = LibraryViewModel(
 			player: transport,
@@ -63,6 +64,47 @@ struct loopedApp: App {
 				.frame(minWidth: 1024, minHeight: 800)
 				.background(Theme.background)
 				.preferredColorScheme(.dark)
+		}
+		.commands {
+			AppCommands(player: player, library: library)
+		}
+	}
+}
+
+/// The native menu bar: File ▸ Open… (⌘O) plus a Playback menu mirroring the
+/// transport. A separate `Commands` struct with `@ObservedObject` view-models
+/// so the items (Play/Pause title, mode checkmark, enablement) stay live.
+private struct AppCommands: Commands {
+	@ObservedObject var player: PlayerViewModel
+	@ObservedObject var library: LibraryViewModel
+
+	var body: some Commands {
+		CommandGroup(replacing: .newItem) {
+			Button("Open…") {
+				Task { await library.openFilesAndLoad() }
+			}
+			.keyboardShortcut("o")
+		}
+
+		CommandMenu("Playback") {
+			Button(player.isPlaying ? "Pause" : "Play") {
+				player.togglePlayPause()
+			}
+			.disabled(player.audioURL == nil)
+
+			Button("Stop") {
+				player.stop()
+			}
+			.disabled(player.audioURL == nil)
+
+			Divider()
+
+			Picker("When a Track Ends", selection: $player.playthroughMode) {
+				Text("Loop This Track").tag(PlaythroughMode.loop)
+				Text("Play the Next Track").tag(PlaythroughMode.advance)
+				Text("Stop").tag(PlaythroughMode.stop)
+			}
+			.pickerStyle(.inline)
 		}
 	}
 }

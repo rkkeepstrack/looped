@@ -139,6 +139,18 @@ final class PlayerViewModel: ObservableObject {
 		isPlaying ? transport.pause() : transport.play()
 	}
 
+	/// The play button: resumes when paused; when already playing, restarts the
+	/// current material (an armed loop back to A, otherwise the track from 0).
+	func play() {
+		isPlaying ? transport.restart() : transport.play()
+	}
+
+	/// The pause button: pauses at the current time; a no-op while paused.
+	func pause() {
+		guard isPlaying else { return }
+		transport.pause()
+	}
+
 	func stop() {
 		transport.stop()
 	}
@@ -162,12 +174,18 @@ final class PlayerViewModel: ObservableObject {
 		}
 	}
 
-	/// Seek to `time`; returns `true` if it actually seeked. Returns `false` (a no-op)
-	/// while a loop is armed (scrub stays in the loop) or when `time` is out of
-	/// bounds (playback continues as before) — the caller then eases the waveform back.
+	/// Seek to `time`; returns `true` if it actually seeked. While a loop is
+	/// armed, seeks within [A, B] move the loop phase and anything outside is
+	/// refused (scrub stays in the loop); without a loop, out-of-bounds times
+	/// are refused. On `false` the caller eases the waveform back.
 	@discardableResult
 	func jumpTo(time: TimeInterval) -> Bool {
-		guard !playback.isLooping else { return false }
+		if playback.isLooping {
+			guard let a = loopStart.0, let b = loopEnd.0, time >= a, time <= b else { return false }
+			playback.seekInLoop(to: time)
+			transport.currentTime = time
+			return true
+		}
 		guard time >= 0, let duration, time <= duration else { return false }
 		transport.seek(to: time)
 		return true
@@ -184,12 +202,6 @@ final class PlayerViewModel: ObservableObject {
 	func updateSync(_ enabled: Bool) {
 		syncPitchAndRate = enabled
 		applyPitchAndRate()
-	}
-
-	/// The pitch shift the synced (varispeed) mode implies at the current rate —
-	/// shown on the disabled pitch slider so the UI reflects what's audible.
-	var impliedSyncSemitones: Float {
-		12 * log2(rate)
 	}
 
 	/// Push the full pitch/rate state to the engine. Neutralize the inactive unit
@@ -243,6 +255,25 @@ final class PlayerViewModel: ObservableObject {
 
 	func setLoopEnd(time: TimeInterval?) {
 		loopEnd = (time, framePosition(for: time))
+		refreshLoop()
+	}
+
+	/// Keyboard toggle ("A"): set the A point to the current time, or clear it
+	/// when already set (the same semantics as click / right-click).
+	func toggleLoopStart() {
+		setLoopStart(time: loopStart.1 == nil ? currentTime : nil)
+	}
+
+	/// Keyboard toggle ("B") — see `toggleLoopStart`.
+	func toggleLoopEnd() {
+		setLoopEnd(time: loopEnd.1 == nil ? currentTime : nil)
+	}
+
+	/// Clear both loop points ("R" / the panel label's reset), in one pass —
+	/// one disarm, one publish per point.
+	func clearLoopPoints() {
+		loopStart = (nil, nil)
+		loopEnd = (nil, nil)
 		refreshLoop()
 	}
 

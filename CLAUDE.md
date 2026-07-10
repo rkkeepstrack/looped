@@ -4,7 +4,8 @@
 
 `looped` is a **macOS SwiftUI** audio-looping app: load an audio file (WAV / MP3 / AIFF), see an
 interactive waveform, play it back with adjustable speed/pitch/volume, scrub the timeline, set
-seamless **A/B loop points**. Spacebar toggles play/pause.
+seamless **A/B loop points**. Shortcuts: space play/pause, tab sidebar, a/b toggle loop
+points, r resets them.
 
 - Platform: macOS only (deployment target **macOS 15**, `Package.swift`).
 - Frameworks: SwiftUI (UI), AppKit (scroll/keyboard capture), AVFoundation (audio), Combine.
@@ -71,7 +72,8 @@ library↔playback bridge; no VM→VM reference):
   library) — and the end-of-track policy: `playthroughMode` (loop / advance / stop, persisted in
   `UserDefaults`) branched in `trackEnded()`; advance defers to the library via the
   `onAdvanceToNextTrack` callback.
-- **`LibraryViewModel`** — the track library: import panel, drag & drop intents
+- **`LibraryViewModel`** — the track library: import panels (files / folder / open-and-load),
+  drag & drop intents
   (`handleLibraryDrop(providers:at:)`, `handleWaveformDrop(providers:)`), `add(urls:at:)` as the
   single intake (dedupe + `Track.isSupported` filter + `AVURLAsset` metadata, no decode),
   `move` (reorder), `load(_:)` bridging to the coordinator (no autoplay), and library-order
@@ -87,11 +89,12 @@ library↔playback bridge; no VM→VM reference):
 **Services** (plain, protocol-backed, no SwiftUI; `Default…`/`AV…` naming):
 
 - **`PlaybackService`** / `AVPlaybackService` — the audio player: engine graph
-  (`player → timePitch → varispeed → mixer`), transport, loop scheduling, wall-clock-smoothed
+  (`player → timePitch → varispeed → eq → limiter → mixer`), transport, loop scheduling, wall-clock-smoothed
   playback clock.
 - **`AudioFileService`** — async URL → `LoadedAudio` decode; rejects tracks > 20 min
   (`AudioFileServiceError.tooLong` → `PlayerViewModel.loadError`).
-- **`LoopingService`** — pure loop DSP: slices [A, B) and crossfades the seam.
+- **`LoopingService`** — pure buffer DSP: slices [A, B) and crossfades the seam; also the plain
+  tail `slice` used by the in-loop seek (injected into `AVPlaybackService`).
 - **`DroppedFileService`** — drag & drop plumbing: `NSItemProvider` → URLs, recursive folder
   expansion filtered by `Track.isSupported`.
 - **`WaveformService`** — pure waveform math: whole-song analysis, bucket-aligned window slice,
@@ -109,7 +112,7 @@ One line per file; the *why* behind non-obvious designs lives in the next sectio
 
 | File | Role |
 |---|---|
-| `loopedApp.swift` | `@main`; composition root; window sizing, dark scheme. |
+| `loopedApp.swift` | `@main`; composition root; window sizing, dark scheme; menu bar (`AppCommands`: File ▸ Open…, Playback menu). |
 | `Models/LoadedAudio.swift` | Decoded audio value type. |
 | `Models/Track.swift` | Library entry + the shared supported-audio-type predicate. |
 | `Models/PlaythroughMode.swift` | End-of-track mode (loop / advance / stop) + cycle order. |
@@ -121,21 +124,24 @@ One line per file; the *why* behind non-obvious designs lives in the next sectio
 | `Services/WaveformService.swift` | Pure waveform analysis + viewport window math + overview downsampling/mapper. |
 | `Services/LibraryStore.swift` | Library persistence protocol + JSON impl (Application Support). |
 | `Stores/PlaybackCoordinator.swift` | Playback store: source + transport + clock timer; track-ended/source-changed callbacks. |
-| `ViewModels/PlayerViewModel.swift` | Transport projection + loop/rate/pitch/volume intents; `currentParameters` bundle; persisted playthrough mode. |
-| `ViewModels/LibraryViewModel.swift` | Library state/intents; play bridge; next/previous/auto-advance; restore/save + per-track parameter stash. |
+| `ViewModels/PlayerViewModel.swift` | Transport projection + split play/pause + loop/rate/pitch/volume intents; `currentParameters` bundle; persisted playthrough mode. |
+| `ViewModels/LibraryViewModel.swift` | Library state/intents; import panels (files/folder/open-and-load); play bridge; next/previous/auto-advance; restore/save + per-track parameter stash. |
 | `ViewModels/WaveformViewModel.swift` | Waveform viewport state; scrub/snap-back. |
 | `ViewModels/ReorderState.swift` | Observable track-list drag state: reorder gap decisions, external drop gap. |
-| `Views/ContentView.swift` | Root layout: sidebar (collapsible, resizable, `@AppStorage`), header, waveform (= quick-load drop zone), minimap strip, bottom bar; hosts `KeyboardHandler`. |
-| `Views/SidebarView.swift` | Left panel: import button + playthrough-mode button, empty-state drop zone, hosts `TrackListView`. |
-| `Views/PlaythroughModeButton.swift` | Cycling end-of-track mode button (icon + tooltip per mode); moves to the transport in plan 07. |
+| `Views/ContentView.swift` | Root layout: sidebar (collapsible, resizable, `@AppStorage`), header, waveform (= quick-load drop zone), minimap strip, bottom bar; installs `keyboardShortcuts`. |
+| `Views/SidebarView.swift` | Left panel: import-files + import-folder buttons, empty-state drop zone, hosts `TrackListView`. |
+| `Views/PlaythroughModeButton.swift` | Cycling end-of-track mode button (icon + tooltip per mode), hosted in the transport cluster. |
 | `Views/TrackListView.swift` | Hand-rolled track list (+ private `TrackRow`, drop delegate): themed selection, drag-reorder, insertion indicator. |
-| `Views/ControlsView.swift` | Bottom bar: volume/rate/pitch sliders + sync checkbox, transport (prev/play/next/stop), A/B `LoopPanel` with nudge arrows. |
-| `Views/WaveformView.swift` | `WaveformDisplayView`: windowed two-layer waveform render, scrub highlight, A/B markers, center playhead. |
+| `Views/ControlsView.swift` | Slim bottom bar: volume + rate/pitch sliders with sync-link icon (left), centered transport (stop/play/pause/prev/next/mode), A/B `LoopPanel` (right). |
+| `Views/LiveWaveformView.swift` | Windowed two-layer waveform render (live per display frame), scrub highlight, A/B markers, center playhead. |
 | `Views/MinimapView.swift` | Full-track minimap strip: whole-song envelope, viewport highlight box (drag = scrub, outside click = seek), loop tint. |
 | `Views/SyncWaveformCanvas.swift` | Synchronous DSWaveformImage canvas shared by the main waveform and the minimap. |
 | `Views/Theme.swift` | Design tokens: palette, waveform colors, layout metrics. |
-| `Views/ScrollObserverView.swift` | `NSViewRepresentable`: scroll-wheel + mouse-drag capture → `WaveformViewModel`. |
-| `Utils/KeyboardHandler.swift` | `NSViewRepresentable` key monitor; spacebar → play/pause. |
+| `Views/Modifiers/HoverEffects.swift` | Button hover feedback: `hoverHighlight()` wash (borderless), `hoverBrightness()` (bordered). |
+| `Views/Modifiers/RightClick.swift` | `onRightClick` modifier: AppKit overlay claiming only right-button events (clears single loop points). |
+| `Views/Modifiers/ScrollObserver.swift` | `observeScrolling` modifier: scroll-wheel + mouse-drag capture → `WaveformViewModel`. |
+| `Views/Modifiers/KeyboardShortcuts.swift` | `keyboardShortcuts` modifier: key monitor; space play/pause, tab sidebar, a/b/r loop points; ignores modal panels. |
+| `Views/Modifiers/HoverActionLabel.swift` | Shared caption label that turns into an action ("Reset") on hover — slider labels + loop panel title. |
 | `Utils/TimeFormatter.swift` | `m:ss` time formatting. |
 | `Utils/RowInsertion.swift` | Pure gap-index math for list reorder/drop (gap N = space above row N; matches `Array.move` offsets). |
 | `Utils/TrackNavigation.swift` | Pure library-transport policy: next/previous move decisions, 3 s restart rule. |
@@ -148,7 +154,13 @@ One line per file; the *why* behind non-obvious designs lives in the next sectio
 - **Seamless A/B loops**: the [A, B) region is sliced out of the buffer and scheduled with
   `AVAudioPlayerNode`'s `.loops`; `LoopingService` crossfades the seam — a hard cut clicks and
   makes `AVAudioUnitTimePitch` warble, especially off 1× speed. Scrubbing while a loop is armed
-  stays inside the loop; seeks are clamped to file bounds (out-of-range seeks crashed the player).
+  stays inside the loop: seeks within [A, B] move the loop phase (`seekInLoop` schedules the
+  iteration's tail once, then the loop again; a phase offset keeps the folded clock aligned),
+  seeks outside snap back; seeks are clamped to file bounds (out-of-range seeks crashed the player).
+- **Volume headroom**: the slider runs 0…2×. Gain ≤ 1 attenuates via `player.volume` (a 0…1 mix
+  gain — values above 1 aren't reliable there), the boost above 1 goes through the EQ node's
+  `globalGain` in dB (capped +6). Apple's PeakLimiter sits after the EQ so a boosted
+  near-full-scale source limits instead of clipping.
 - **Engine rewires stop the engine first** (`setSource`): reconnecting a running engine races the
   render thread and crashes on the second track. Overlapping load requests are dropped in
   `LibraryViewModel.load` (a double-click fires two taps) for the same reason.
@@ -182,15 +194,25 @@ One line per file; the *why* behind non-obvious designs lives in the next sectio
   restarts the current track when > 3 s in (standard player convention); on the first track it
   always restarts; with an A/B loop armed the restart jumps to the loop's A point instead
   (`PlaybackService.restartLoop`) — a silent no-op read as a broken button.
-- **Playthrough modes** (what happens at end of track): one cycling button (sidebar-hosted until
-  plan 07; warm-yellow `Theme.controlActive` icon = "engaged state", not selection-orange; the
+- **Playthrough modes** (what happens at end of track): one cycling button in the transport
+  cluster (warm-yellow `Theme.controlActive` icon = "engaged state", not selection-orange; the
   app-wide `NSInitialToolTipDelay` default is lowered at the composition root so its `.help`
-  tooltip shows promptly) picks loop / advance / stop. The branch lives in `PlayerViewModel.trackEnded()` (intent
+  tooltip shows promptly) picks loop / advance / stop, mirrored as a Picker in the Playback menu.
+  The branch lives in `PlayerViewModel.trackEnded()` (intent
   layer): the coordinator has already stopped (playhead at 0), so *stop* is done, *loop* just
   plays again, *advance* fires `onAdvanceToNextTrack` → the library plays the next track (the
   last track just stops). Default **advance**; persisted as a `UserDefaults` scalar (app-wide, not
   per track — it doesn't belong in the JSON store). A looping track never "ends" (an armed A/B
   loop repeats forever), so the mode can't fire mid-loop.
+- **Bottom bar** (plan 07): the transport is pinned to the exact *viewport* center (equal
+  flexible-width side slots — the anchor the eye needs); the sliders and the loop panel hug it
+  from either side rather than sitting in the corners. Play and pause are **separate buttons**: play-while-playing *restarts* the current
+  material (loop → back to A via `PlaybackCoordinator.restart()`, else from 0),
+  pause-while-paused is a no-op; spacebar keeps toggling. The sync checkbox became the link icon
+  beside the sliders (yellow = synced); while synced the pitch slider is *hidden* and the pair
+  collapses to one Speed slider. The menu bar (`AppCommands`) uses `@ObservedObject` view-models
+  so item titles/enablement stay live; File ▸ Open… (⌘O) → `openFilesAndLoad` (add all, load
+  first chosen).
 - **Library persistence**: JSON at `Application Support/looped/library.json` — tracks (plain
   paths: the `just bundle` app is unsigned/unsandboxed, so paths stay readable; revisit with
   security-scoped bookmarks if ever sandboxed), last selection, and each track's
@@ -218,7 +240,7 @@ Two layers, mirroring the source folders:
 - _View-model behavior_ via the doubles in `Support/TestDoubles.swift` (`FakePlaybackService` spy,
   `FakeLibraryStore`, `TooLongAudioFileService`, `SlowAudioFileService` for overlapping-request
   tests, `AudioFixture` temp WAVs): `PlaybackCoordinatorTests` (end-of-track via the exposed
-  `tick()` — no run-loop spinning), `PlayerViewModelTests` (incl. playthrough modes, driven via
+  `tick()` — no run-loop spinning), `PlayerViewModelTests` (incl. split play/pause and playthrough modes, driven via
   the coordinator's `tick()`; ephemeral `UserDefaults` suite per instance),
   `LibraryViewModelTests` (incl. next/previous/auto-advance, restore + parameter stash),
   `WaveformViewModelTests`, `ReorderStateTests` (drag latching, no-op slots, external-gap precedence).
@@ -229,7 +251,10 @@ device/eyes/ears — see **`TESTING.md`** (repo root) for the manual QA checklis
 ## Conventions
 
 - SwiftUI-first; drop to AppKit (`NSViewRepresentable`) only where SwiftUI can't (scroll/keyboard
-  capture).
+  capture). Such plumbing — and shared view modifiers/micro-components — lives in
+  **`Views/Modifiers/`** behind a `View`-extension entry point (`keyboardShortcuts`,
+  `observeScrolling`, `onRightClick`, the hover effects); the representable itself stays
+  `private`, so callers never see AppKit.
 - **Layering**: `View → ViewModel → Store → Service`. Views hold no logic; view-models hold
   `@Published` state + intents; stores are UI-free observables shared across view-models; services
   are plain (no SwiftUI) and sit behind protocols. Keep UI-agnostic code out of views and
