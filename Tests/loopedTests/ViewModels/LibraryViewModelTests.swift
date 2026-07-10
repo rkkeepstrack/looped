@@ -606,6 +606,10 @@ struct LibraryViewModelTests {
 		player.play()
 		playback.fakeCurrentTime = 2
 		player.tick()
+		// Back to 0 — the next track starts at the top. Leaving the fake clock
+		// past the fixture's duration lets the live 0.03s timer (running since
+		// play()) end the *advanced-to* track too and stop playback again.
+		playback.fakeCurrentTime = 0
 		// Let the wired Task run to completion. Wait on isPlaying — the *last*
 		// effect of the chain; currentTrackID flips inside load(), before play().
 		for _ in 0 ..< 200 where !player.isPlaying {
