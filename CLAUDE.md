@@ -173,6 +173,8 @@ One line per file; the *why* behind non-obvious designs lives in the next sectio
   stays inside the loop: seeks within [A, B] move the loop phase (`seekInLoop` schedules the
   iteration's tail once, then the loop again; a phase offset keeps the folded clock aligned),
   seeks outside snap back; seeks are clamped to file bounds (out-of-range seeks crashed the player).
+  Clearing the loop bridges in memory (the rest of the current iteration from the loop buffer,
+  then the file from B) — scheduling only the disk-backed segment left an audible ~0.2 s hole.
 - **Volume headroom**: the slider runs 0…2×. Gain ≤ 1 attenuates via `player.volume` (a 0…1 mix
   gain — values above 1 aren't reliable there), the boost above 1 goes through the EQ node's
   `globalGain` in dB (capped +6). Apple's PeakLimiter sits after the EQ so a boosted
@@ -188,7 +190,10 @@ One line per file; the *why* behind non-obvious designs lives in the next sectio
   `TimelineView(.animation)` + `PlayerViewModel.livePlaybackTime()` (the 0.03s timer only feeds
   labels). The canvas draws **synchronously** (`SyncWaveformCanvas`, a `WaveformLiveCanvas` clone)
   so the reslice and its compensating offset commit in one pass — the library's async canvas
-  lagged a frame and made the seam flicker.
+  lagged a frame and made the seam flicker. The main waveform draws *peak-morphed* samples
+  (`WaveformService.peakMorph`, a power curve applied once per analysis) so evenly loud sections
+  still show louder/quieter detail for loop hunting; the minimap keeps the raw envelope. A subtle
+  grey midline (`Theme.waveformCenterline`) marks the mirror axis.
 - **Sidebar toggle vs. waveform**: the window math centers the playhead sample in the *actual*
   frame regardless of the stored viewport width, so `WaveformViewModel.updateViewportWidth`
   grows the render width immediately (a too-narrow chunk leaves blank edges) but defers shrinks

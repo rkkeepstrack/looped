@@ -39,6 +39,12 @@ struct LiveWaveformView: View {
 						let win = offsetCalculator.window(playbackTime: time)
 
 						ZStack {
+							// Midline (bug-fixes.md #3): the axis the waveform mirrors around,
+							// visible even through silence.
+							Rectangle()
+								.fill(Theme.waveformCenterline)
+								.frame(width: width, height: 1)
+
 							// Panning chunk: waveform + loop markers, offset under the iterator.
 							ZStack {
 								SyncWaveformCanvas(samples: win.samples, configuration: configuration(color: Theme.waveformUpcoming))

@@ -84,6 +84,33 @@ struct WaveformServiceTests {
 		#expect(ahead.playheadX == 108) // (2000 - 88)/2 = 956 → clamped to width
 	}
 
+	// MARK: - Peak morph
+
+	@Test func peakMorphKeepsEndpointsAndExpandsLoudContrast() {
+		// Inverted dB: 0 == loudest, 1 == silence — the endpoints must be fixed.
+		let out = service.peakMorph(samples: [0.0, 1.0], exponent: 2.0)
+		#expect(out == [0.0, 1.0])
+
+		// γ = 2: a' = a², so loud pairs spread apart and quiet pairs squeeze.
+		let loud = service.peakMorph(samples: [0.05, 0.10], exponent: 2.0)
+		#expect(abs((loud[1] - loud[0]) - 0.0925) < 0.0001) // raw gap 0.05 → ~2×
+		let quiet = service.peakMorph(samples: [0.80, 0.85], exponent: 2.0)
+		#expect((quiet[1] - quiet[0]) < 0.05)
+	}
+
+	@Test func peakMorphClampsOutOfRangeSamples() {
+		let out = service.peakMorph(samples: [-0.5, 1.5], exponent: 2.0)
+		#expect(out == [0.0, 1.0])
+	}
+
+	@Test func peakMorphExponentOneIsIdentity() {
+		let samples: [Float] = [0.0, 0.25, 0.5, 0.75, 1.0]
+		let out = service.peakMorph(samples: samples, exponent: 1.0)
+		for (a, b) in zip(out, samples) {
+			#expect(abs(a - b) < 0.0001)
+		}
+	}
+
 	// MARK: - Overview downsampling
 
 	@Test func overviewSamplesKeepPerBucketPeaks() {

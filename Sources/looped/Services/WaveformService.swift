@@ -84,6 +84,12 @@ protocol WaveformService: Sendable {
 	/// x of a song time within a chunk (for loop markers/region).
 	func chunkX(time: TimeInterval, layout: WaveformLayout, chunkStartSample: Double) -> CGFloat
 
+	/// Expand contrast between loud values (a power curve on the linear-ized
+	/// amplitude) so louder/quieter parts stay distinguishable inside evenly
+	/// loud sections — the loop-point-hunting view. Pure; applied once per
+	/// analysis, not per frame.
+	func peakMorph(samples: [Float], exponent: Float) -> [Float]
+
 	/// Downsample the whole-song envelope to `targetCount` samples for the
 	/// overview strip — per-bucket **min** (samples are inverted dB: 1 == silence,
 	/// 0 == loudest), so peaks survive the reduction. No second decode.
@@ -136,6 +142,13 @@ struct DefaultWaveformService: WaveformService {
 
 	func chunkX(time: TimeInterval, layout: WaveformLayout, chunkStartSample: Double) -> CGFloat {
 		CGFloat(time * Double(layout.sampleRate) - chunkStartSample) / layout.sampleScale
+	}
+
+	func peakMorph(samples: [Float], exponent: Float) -> [Float] {
+		// Samples are inverted dB (1 == silence, 0 == loudest). In amplitude terms
+		// a = 1 − s, the curve is a^γ: with γ > 1 its slope grows toward a = 1, so
+		// differences between loud values stretch while the quiet floor compresses.
+		samples.map { 1 - pow(1 - min(max($0, 0), 1), exponent) }
 	}
 
 	func overviewSamples(samples: [Float], targetCount: Int) -> [Float] {

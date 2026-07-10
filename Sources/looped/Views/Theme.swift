@@ -27,7 +27,6 @@ enum Theme {
 
 	/// Already-played portion of the waveform (left of the center iterator).
 	static let waveformPlayed = accent
-	/// Upcoming portion of the waveform.
 	static let waveformUpcoming = Color(red: 0.28, green: 0.28, blue: 0.31)
 	/// Translucent fill shading the A–B loop region (matches the markers' blue).
 	static let loopRegion = loopMarkerA.opacity(0.12)
@@ -40,6 +39,9 @@ enum Theme {
 	/// Scrub highlight — subtle light blue (the cool counterpart to the warm
 	/// played-orange), drawn between the played edge and the scrub cursor.
 	static let waveformScrub = Color(red: 0.45, green: 0.68, blue: 0.90).opacity(0.75)
+	/// Horizontal midline of the main waveform (the mirror axis the stripes
+	/// reflect around) — subtle, always visible.
+	static let waveformCenterline = Color(white: 0.5).opacity(0.25)
 	/// Translucent light-gray wash over the waveform while a file drag hovers
 	/// the waveform drop zone (drop → load immediately).
 	static let waveformDropHighlight = Color(white: 0.85).opacity(0.18)
