@@ -4,7 +4,8 @@
 
 `looped` is a **macOS SwiftUI** audio-looping app: load an audio file (WAV / MP3 / AIFF), see an
 interactive waveform, play it back with adjustable speed/pitch/volume, scrub the timeline, set
-seamless **A/B loop points**. Spacebar toggles play/pause.
+seamless **A/B loop points**. Shortcuts: space play/pause, tab sidebar, a/b toggle loop
+points, r resets them.
 
 - Platform: macOS only (deployment target **macOS 15**, `Package.swift`).
 - Frameworks: SwiftUI (UI), AppKit (scroll/keyboard capture), AVFoundation (audio), Combine.
@@ -126,7 +127,7 @@ One line per file; the *why* behind non-obvious designs lives in the next sectio
 | `ViewModels/LibraryViewModel.swift` | Library state/intents; play bridge; next/previous/auto-advance; restore/save + per-track parameter stash. |
 | `ViewModels/WaveformViewModel.swift` | Waveform viewport state; scrub/snap-back. |
 | `ViewModels/ReorderState.swift` | Observable track-list drag state: reorder gap decisions, external drop gap. |
-| `Views/ContentView.swift` | Root layout: sidebar (collapsible, resizable, `@AppStorage`), header, waveform (= quick-load drop zone), minimap strip, bottom bar; hosts `KeyboardHandler`. |
+| `Views/ContentView.swift` | Root layout: sidebar (collapsible, resizable, `@AppStorage`), header, waveform (= quick-load drop zone), minimap strip, bottom bar; installs `keyboardShortcuts`. |
 | `Views/SidebarView.swift` | Left panel: import button + playthrough-mode button, empty-state drop zone, hosts `TrackListView`. |
 | `Views/PlaythroughModeButton.swift` | Cycling end-of-track mode button (icon + tooltip per mode); moves to the transport in plan 07. |
 | `Views/TrackListView.swift` | Hand-rolled track list (+ private `TrackRow`, drop delegate): themed selection, drag-reorder, insertion indicator. |
@@ -136,7 +137,7 @@ One line per file; the *why* behind non-obvious designs lives in the next sectio
 | `Views/SyncWaveformCanvas.swift` | Synchronous DSWaveformImage canvas shared by the main waveform and the minimap. |
 | `Views/Theme.swift` | Design tokens: palette, waveform colors, layout metrics. |
 | `Views/ScrollObserverView.swift` | `NSViewRepresentable`: scroll-wheel + mouse-drag capture → `WaveformViewModel`. |
-| `Utils/KeyboardHandler.swift` | `NSViewRepresentable` key monitor; spacebar → play/pause. |
+| `Views/Modifiers/KeyboardShortcuts.swift` | `keyboardShortcuts` modifier: key monitor; space play/pause, tab sidebar, a/b/r loop points; ignores modal panels. |
 | `Utils/TimeFormatter.swift` | `m:ss` time formatting. |
 | `Utils/RowInsertion.swift` | Pure gap-index math for list reorder/drop (gap N = space above row N; matches `Array.move` offsets). |
 | `Utils/TrackNavigation.swift` | Pure library-transport policy: next/previous move decisions, 3 s restart rule. |

@@ -46,8 +46,7 @@ struct ContentView: View {
 			.help("Toggle sidebar")
 			.padding(10)
 		}
-		// Keyboard shortcuts (spacebar → play/pause)
-		.background(KeyboardHandler(audioPlayer: audioPlayer))
+		.keyboardShortcuts(player: audioPlayer, toggleSidebar: { sidebarOpen.toggle() })
 	}
 
 	// MARK: Sidebar resize
