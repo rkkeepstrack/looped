@@ -121,6 +121,9 @@ struct LiveWaveformView: View {
 				offsetCalculator.onScrollChange(playbackTime: audioPlayer.livePlaybackTime())
 			},
 			onEnd: {
+				// A gesture that never scrubbed (e.g. the lift of a glide-stopping
+				// touch) has nothing to seek — the glide's own end already did.
+				guard offsetCalculator.isScrolling else { return }
 				let target = offsetCalculator.scrolledTime(playbackTime: audioPlayer.livePlaybackTime())
 				if audioPlayer.jumpTo(time: target) {
 					// Seeked: the view is already at the target, snap immediately.
