@@ -14,6 +14,9 @@ protocol LoopingService: Sendable {
 	/// Returns a loop-ready copy of frames [startFrame, endFrame) from `source`,
 	/// with a crossfaded seam, or `nil` if the range is invalid.
 	func makeLoopBuffer(from source: AVAudioPCMBuffer, startFrame: AVAudioFramePosition, endFrame: AVAudioFramePosition) -> AVAudioPCMBuffer?
+	/// Plain copy of `source` from `frame` to its end (all channels, no
+	/// crossfade), or `nil` when nothing remains — the in-loop seek's tail.
+	func slice(_ source: AVAudioPCMBuffer, from frame: AVAudioFrameCount) -> AVAudioPCMBuffer?
 }
 
 struct DefaultLoopingService: LoopingService {
@@ -21,8 +24,22 @@ struct DefaultLoopingService: LoopingService {
 		let totalFrames = AVAudioFramePosition(source.frameLength)
 		let start = max(0, min(startFrame, totalFrames))
 		let end = max(start, min(endFrame, totalFrames))
-		let frameCount = AVAudioFrameCount(end - start)
 
+		guard let out = copy(source, start: AVAudioFrameCount(start), frameCount: AVAudioFrameCount(end - start)),
+		      let src = source.floatChannelData
+		else { return nil }
+
+		crossfadeSeam(out, src: src, endFrame: Int(end), totalFrames: Int(totalFrames), channelCount: Int(source.format.channelCount))
+		return out
+	}
+
+	func slice(_ source: AVAudioPCMBuffer, from frame: AVAudioFrameCount) -> AVAudioPCMBuffer? {
+		guard frame < source.frameLength else { return nil }
+		return copy(source, start: frame, frameCount: source.frameLength - frame)
+	}
+
+	/// Copy of frames [start, start + frameCount) from `source` (all channels).
+	private func copy(_ source: AVAudioPCMBuffer, start: AVAudioFrameCount, frameCount: AVAudioFrameCount) -> AVAudioPCMBuffer? {
 		guard frameCount > 0,
 		      let out = AVAudioPCMBuffer(pcmFormat: source.format, frameCapacity: frameCount),
 		      let src = source.floatChannelData,
@@ -30,13 +47,10 @@ struct DefaultLoopingService: LoopingService {
 		else { return nil }
 
 		out.frameLength = frameCount
-		let channelCount = Int(source.format.channelCount)
 		let byteCount = Int(frameCount) * MemoryLayout<Float>.size
-		for channel in 0 ..< channelCount {
+		for channel in 0 ..< Int(source.format.channelCount) {
 			memcpy(dst[channel], src[channel] + Int(start), byteCount)
 		}
-
-		crossfadeSeam(out, src: src, endFrame: Int(end), totalFrames: Int(totalFrames), channelCount: channelCount)
 		return out
 	}
 

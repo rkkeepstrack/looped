@@ -218,14 +218,28 @@ final class PlayerViewModelTests {
 		#expect(fake.seekCount == 0)
 	}
 
-	@Test func jumpToStaysInLoopWhileArmed() async {
+	@Test func jumpToInsideAnArmedLoopMovesTheLoopPhase() async {
 		let vm = await loadedViewModel()
 		vm.setLoopStart(time: 0.1)
 		vm.setLoopEnd(time: 0.5)
 		#expect(fake.isLooping)
 
-		// Scrubbing while looping must be a no-op seek (stays in the loop).
-		#expect(!vm.jumpTo(time: 0.3))
+		#expect(vm.jumpTo(time: 0.3))
+		#expect(fake.seekInLoopCount == 1)
+		#expect(abs((fake.lastSeekInLoop ?? -1) - 0.3) <= 1e-9)
+		#expect(abs(vm.currentTime - 0.3) <= 1e-9)
+		#expect(fake.seekCount == 0) // never a plain full-file seek
+	}
+
+	@Test func jumpToOutsideAnArmedLoopIsRefused() async {
+		let vm = await loadedViewModel()
+		vm.setLoopStart(time: 0.1)
+		vm.setLoopEnd(time: 0.5)
+
+		// Scrubbing outside [A, B] must be a no-op (stays in the loop).
+		#expect(!vm.jumpTo(time: 0.7))
+		#expect(!vm.jumpTo(time: 0.05))
+		#expect(fake.seekInLoopCount == 0)
 		#expect(fake.seekCount == 0)
 	}
 

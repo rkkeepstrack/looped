@@ -67,6 +67,16 @@ final class FakePlaybackService: PlaybackService {
 		fakeCurrentTime = time
 	}
 
+	private(set) var seekInLoopCount = 0
+	private(set) var lastSeekInLoop: TimeInterval?
+
+	func seekInLoop(to time: TimeInterval) {
+		guard isLooping else { return }
+		seekInLoopCount += 1
+		lastSeekInLoop = time
+		fakeCurrentTime = time
+	}
+
 	func restartLoop() {
 		guard isLooping else { return }
 		restartLoopCount += 1

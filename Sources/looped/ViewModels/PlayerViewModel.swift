@@ -162,12 +162,18 @@ final class PlayerViewModel: ObservableObject {
 		}
 	}
 
-	/// Seek to `time`; returns `true` if it actually seeked. Returns `false` (a no-op)
-	/// while a loop is armed (scrub stays in the loop) or when `time` is out of
-	/// bounds (playback continues as before) — the caller then eases the waveform back.
+	/// Seek to `time`; returns `true` if it actually seeked. While a loop is
+	/// armed, seeks within [A, B] move the loop phase and anything outside is
+	/// refused (scrub stays in the loop); without a loop, out-of-bounds times
+	/// are refused. On `false` the caller eases the waveform back.
 	@discardableResult
 	func jumpTo(time: TimeInterval) -> Bool {
-		guard !playback.isLooping else { return false }
+		if playback.isLooping {
+			guard let a = loopStart.0, let b = loopEnd.0, time >= a, time <= b else { return false }
+			playback.seekInLoop(to: time)
+			transport.currentTime = time
+			return true
+		}
 		guard time >= 0, let duration, time <= duration else { return false }
 		transport.seek(to: time)
 		return true

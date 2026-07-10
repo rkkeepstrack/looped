@@ -91,7 +91,8 @@ library↔playback bridge; no VM→VM reference):
   playback clock.
 - **`AudioFileService`** — async URL → `LoadedAudio` decode; rejects tracks > 20 min
   (`AudioFileServiceError.tooLong` → `PlayerViewModel.loadError`).
-- **`LoopingService`** — pure loop DSP: slices [A, B) and crossfades the seam.
+- **`LoopingService`** — pure buffer DSP: slices [A, B) and crossfades the seam; also the plain
+  tail `slice` used by the in-loop seek (injected into `AVPlaybackService`).
 - **`DroppedFileService`** — drag & drop plumbing: `NSItemProvider` → URLs, recursive folder
   expansion filtered by `Track.isSupported`.
 - **`WaveformService`** — pure waveform math: whole-song analysis, bucket-aligned window slice,
@@ -148,7 +149,9 @@ One line per file; the *why* behind non-obvious designs lives in the next sectio
 - **Seamless A/B loops**: the [A, B) region is sliced out of the buffer and scheduled with
   `AVAudioPlayerNode`'s `.loops`; `LoopingService` crossfades the seam — a hard cut clicks and
   makes `AVAudioUnitTimePitch` warble, especially off 1× speed. Scrubbing while a loop is armed
-  stays inside the loop; seeks are clamped to file bounds (out-of-range seeks crashed the player).
+  stays inside the loop: seeks within [A, B] move the loop phase (`seekInLoop` schedules the
+  iteration's tail once, then the loop again; a phase offset keeps the folded clock aligned),
+  seeks outside snap back; seeks are clamped to file bounds (out-of-range seeks crashed the player).
 - **Engine rewires stop the engine first** (`setSource`): reconnecting a running engine races the
   render thread and crashes on the second track. Overlapping load requests are dropped in
   `LibraryViewModel.load` (a double-click fires two taps) for the same reason.

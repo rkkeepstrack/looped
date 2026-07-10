@@ -20,7 +20,8 @@ struct loopedApp: App {
 		// controls like the playthrough-mode button. `register` doesn't persist.
 		UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 500])
 
-		let playback = AVPlaybackService()
+		let looping = DefaultLoopingService()
+		let playback = AVPlaybackService(looping: looping)
 		let transport = PlaybackCoordinator(
 			playback: playback,
 			files: DefaultAudioFileService()
@@ -28,7 +29,7 @@ struct loopedApp: App {
 		let player = PlayerViewModel(
 			transport: transport,
 			playback: playback,
-			looping: DefaultLoopingService()
+			looping: looping
 		)
 		let library = LibraryViewModel(
 			player: transport,

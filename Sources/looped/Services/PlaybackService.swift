@@ -22,6 +22,9 @@ protocol PlaybackService: AnyObject {
 	func scheduleLoop(_ buffer: AVAudioPCMBuffer, startTime: TimeInterval, length: TimeInterval)
 	/// Leave loop mode and resume normal full-file playback from `time`.
 	func clearLoop(resumeAt time: TimeInterval)
+	/// Seek within the armed loop (`time` in [A, B]) without leaving loop mode;
+	/// no-op when not looping.
+	func seekInLoop(to time: TimeInterval)
 	/// Jump back to the armed loop's A point (stays looping); no-op when not looping.
 	func restartLoop()
 	var isLooping: Bool { get }
@@ -54,8 +57,16 @@ final class AVPlaybackService: PlaybackService {
 	private(set) var isLooping = false
 	private var loopStartTime: TimeInterval = 0
 	private var loopLength: TimeInterval = 0
+	/// Where in the loop the render clock started (an in-loop seek schedules the
+	/// buffer tail first, so elapsed 0 ≠ the A point) — folded into `currentTime`.
+	private var loopPhaseOffset: TimeInterval = 0
 
-	init() {
+	/// Buffer DSP (the in-loop seek's tail slice) — injected so all buffer
+	/// copying lives in one service.
+	private let looping: LoopingService
+
+	init(looping: LoopingService = DefaultLoopingService()) {
+		self.looping = looping
 		engine.attach(player)
 		engine.attach(timePitch)
 		engine.attach(varispeed)
@@ -147,6 +158,7 @@ final class AVPlaybackService: PlaybackService {
 		isLooping = true
 		loopStartTime = startTime
 		loopLength = length
+		loopPhaseOffset = 0
 
 		player.stop()
 		player.scheduleBuffer(buffer, at: nil, options: [.loops], completionHandler: nil)
@@ -166,6 +178,32 @@ final class AVPlaybackService: PlaybackService {
 	func restartLoop() {
 		guard isLooping, let loopBuffer else { return }
 		scheduleLoop(loopBuffer, startTime: loopStartTime, length: loopLength)
+	}
+
+	func seekInLoop(to time: TimeInterval) {
+		guard isLooping, let loopBuffer, loopLength > 0 else { return }
+		let clamped = min(max(time, loopStartTime), loopStartTime + loopLength)
+		let offsetFrames = AVAudioFramePosition((clamped - loopStartTime) * loopBuffer.format.sampleRate)
+
+		let wasPlaying = player.isPlaying
+		player.stop()
+
+		// Play the rest of the current iteration once, then fall into the
+		// regular looping buffer — seamless, and the phase offset keeps the
+		// reported clock aligned.
+		if offsetFrames > 0, offsetFrames < AVAudioFramePosition(loopBuffer.frameLength),
+		   let tail = looping.slice(loopBuffer, from: AVAudioFrameCount(offsetFrames))
+		{
+			player.scheduleBuffer(tail, at: nil, completionHandler: nil)
+			loopPhaseOffset = clamped - loopStartTime
+		} else {
+			loopPhaseOffset = 0
+		}
+		player.scheduleBuffer(loopBuffer, at: nil, options: [.loops], completionHandler: nil)
+		isScheduled = true
+		lastPausedTime = clamped
+
+		if wasPlaying { player.play() }
 	}
 
 	// MARK: - Clock
@@ -210,7 +248,7 @@ final class AVPlaybackService: PlaybackService {
 		// While looping, the render clock keeps counting across iterations; fold it
 		// back into the [A, B] window so the reported time stays in range.
 		if isLooping, loopLength > 0 {
-			return loopStartTime + elapsed.truncatingRemainder(dividingBy: loopLength)
+			return loopStartTime + (loopPhaseOffset + elapsed).truncatingRemainder(dividingBy: loopLength)
 		}
 		return lastPausedTime + elapsed
 	}

@@ -57,6 +57,22 @@ struct LoopingServiceTests {
 		#expect(try #require(out.floatChannelData?[0][0]) == 60)
 	}
 
+	// MARK: - slice (the in-loop seek's tail copy)
+
+	@Test func sliceCopiesFromTheFrameToTheEnd() throws {
+		let out = try #require(service.slice(rampBuffer(count: 100), from: 30))
+		let data = try #require(out.floatChannelData?[0])
+		#expect(out.frameLength == 70)
+		#expect(data[0] == 30) // source[30], untouched (no crossfade)
+		#expect(data[69] == 99)
+	}
+
+	@Test func sliceAtOrPastTheEndReturnsNil() {
+		let source = rampBuffer(count: 100)
+		#expect(service.slice(source, from: 100) == nil)
+		#expect(service.slice(source, from: 150) == nil)
+	}
+
 	@Test func invalidRangesReturnNil() {
 		let source = rampBuffer(count: 100)
 		#expect(service.makeLoopBuffer(from: source, startFrame: 50, endFrame: 50) == nil) // empty
