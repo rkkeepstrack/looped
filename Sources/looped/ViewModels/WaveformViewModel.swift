@@ -43,6 +43,12 @@ final class WaveformViewModel: ObservableObject {
 	// MARK: Analyzed samples (whole song, loaded once per URL)
 
 	@Published private(set) var samples: [Float] = []
+	/// `samples` after the peak-morph contrast curve — what the main waveform
+	/// windows over. The minimap keeps the raw envelope (bug-fixes.md #2 targets
+	/// the zoomed loop-hunting view, not the overview).
+	private var morphedSamples: [Float] = []
+	/// Contrast exponent for the main waveform's peak morph (1 = off).
+	private let peakMorphExponent: Float = 2.0
 	private var analyzedURL: URL?
 	private var analysisTask: Task<Void, Never>?
 
@@ -57,7 +63,6 @@ final class WaveformViewModel: ObservableObject {
 		snapTimer?.invalidate()
 	}
 
-	/// Geometry snapshot handed to the service for the pure math.
 	private var layout: WaveformLayout {
 		WaveformLayout(
 			viewportWidth: waveformWidth,
@@ -108,13 +113,17 @@ final class WaveformViewModel: ObservableObject {
 		guard url != analyzedURL else { return }
 		analyzedURL = url
 		samples = []
+		morphedSamples = []
 		let samplesPerSecond = pixelsPerSecond * sampleScale
 		analysisTask?.cancel()
 		analysisTask = Task { [weak self] in
 			guard let self else { return }
 			let result = await service.analyze(url: url, duration: duration, noiseFloor: noiseFloor, samplesPerSecond: samplesPerSecond)
+			// Morph off the main actor — it's an O(n) pass over the whole envelope.
+			let morphed = service.peakMorph(samples: result, exponent: peakMorphExponent)
 			await MainActor.run {
 				guard self.analyzedURL == url else { return }
+				self.morphedSamples = morphed
 				self.samples = result
 			}
 		}
@@ -131,7 +140,7 @@ final class WaveformViewModel: ObservableObject {
 	}
 
 	func window(playbackTime: TimeInterval) -> WaveformWindow {
-		service.window(samples: samples, layout: layout, centerTime: centerTime(playbackTime: playbackTime), playbackTime: playbackTime)
+		service.window(samples: morphedSamples, layout: layout, centerTime: centerTime(playbackTime: playbackTime), playbackTime: playbackTime)
 	}
 
 	func chunkX(forTime time: TimeInterval, chunkStartSample: Double) -> CGFloat {

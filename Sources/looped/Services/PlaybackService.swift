@@ -20,7 +20,8 @@ protocol PlaybackService: AnyObject {
 	func seek(to time: TimeInterval)
 	/// Schedule a pre-sliced loop buffer to repeat seamlessly (`.loops`).
 	func scheduleLoop(_ buffer: AVAudioPCMBuffer, startTime: TimeInterval, length: TimeInterval)
-	/// Leave loop mode and resume normal full-file playback from `time`.
+	/// Leave loop mode and resume normal full-file playback from `time`
+	/// (clamped into the loop range — callers pass the folded loop clock).
 	func clearLoop(resumeAt time: TimeInterval)
 	/// Seek within the armed loop (`time` in [A, B]) without leaving loop mode;
 	/// no-op when not looping.
@@ -127,9 +128,9 @@ final class AVPlaybackService: PlaybackService {
 		}
 	}
 
-	/// `player → timePitch → varispeed → eq → limiter → mainMixer`. All units stay
-	/// in the graph permanently; the inactive effect is kept neutral (rate 1 /
-	/// pitch 0 / gain 0), the limiter only acts when the boosted signal peaks.
+	/// All units stay in the graph permanently; the inactive effect is kept
+	/// neutral (rate 1 / pitch 0 / gain 0), the limiter only acts when the
+	/// boosted signal peaks.
 	private func connectGraph(format: AVAudioFormat?) {
 		engine.connect(player, to: timePitch, format: format)
 		engine.connect(timePitch, to: varispeed, format: format)
@@ -226,9 +227,51 @@ final class AVPlaybackService: PlaybackService {
 
 	func clearLoop(resumeAt time: TimeInterval) {
 		guard isLooping else { return }
+		// While playing, ignore the caller's clock — it's the polled UI time, up
+		// to a timer tick stale; resuming there re-plays the difference, an
+		// audible stutter. Read the live (folded) position instead.
+		let time = player.isPlaying ? currentTime() : time
 		isLooping = false
-		loopBuffer = nil
-		seek(to: time)
+		defer { loopBuffer = nil }
+
+		// Scheduling the file segment alone leaves an audible ~0.2 s hole — the
+		// disk-backed schedule isn't ready when `play()` fires (bug-fixes.md #4).
+		// Bridge it in memory: play the rest of the current loop iteration from
+		// the loop buffer (instant, same trick as `seekInLoop`), then hand over
+		// to the file at the loop's B point.
+		guard let file, let loopBuffer, loopLength > 0 else {
+			seek(to: time)
+			return
+		}
+
+		let sampleRate = loopBuffer.format.sampleRate
+		let clamped = min(max(time, loopStartTime), loopStartTime + loopLength)
+		let offsetFrames = AVAudioFrameCount(min(max(0, (clamped - loopStartTime) * sampleRate), Double(loopBuffer.frameLength)))
+
+		let wasPlaying = player.isPlaying
+		player.stop()
+
+		var scheduled = false
+		if offsetFrames < loopBuffer.frameLength, let tail = looping.slice(loopBuffer, from: offsetFrames) {
+			player.scheduleBuffer(tail, at: nil, completionHandler: nil)
+			scheduled = true
+		}
+		// The handover is click-free because it's sample-adjacent, so the resume
+		// frame must be *exactly* the buffer's end frame: reconstruct it as
+		// start + length (`(loopStartTime + loopLength) * sampleRate` rounds
+		// differently and can skip/repeat a frame at the seam).
+		let resumeFrame = AVAudioFramePosition(loopStartTime * sampleRate) + AVAudioFramePosition(loopBuffer.frameLength)
+		if resumeFrame < file.length {
+			player.scheduleSegment(file, startingFrame: resumeFrame, frameCount: AVAudioFrameCount(file.length - resumeFrame), at: nil, completionHandler: nil)
+			scheduled = true
+		}
+		isScheduled = scheduled
+		lastPausedTime = clamped
+
+		// Nothing schedulable (cleared at B with the loop ending at the file's
+		// end): leave the node stopped at `clamped` — playing an empty queue
+		// would let the clock run past the duration.
+		if wasPlaying, scheduled { player.play() }
 	}
 
 	func restartLoop() {
