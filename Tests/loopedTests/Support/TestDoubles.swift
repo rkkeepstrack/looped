@@ -23,6 +23,7 @@ final class FakePlaybackService: PlaybackService {
 	private(set) var lastLoopStart: TimeInterval?
 	private(set) var lastLoopLength: TimeInterval?
 	private(set) var clearLoopCount = 0
+	private(set) var restartLoopCount = 0
 	private(set) var lastRate: Float?
 	private(set) var lastPitchCents: Float?
 	private(set) var lastVarispeed: Float?
@@ -64,6 +65,12 @@ final class FakePlaybackService: PlaybackService {
 		clearLoopCount += 1
 		isLooping = false
 		fakeCurrentTime = time
+	}
+
+	func restartLoop() {
+		guard isLooping else { return }
+		restartLoopCount += 1
+		fakeCurrentTime = lastLoopStart ?? 0
 	}
 
 	func currentTime() -> TimeInterval {

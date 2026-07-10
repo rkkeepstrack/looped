@@ -20,7 +20,7 @@ seamless **A/B loop points**. Spacebar toggles play/pause.
 Standard SwiftPM layout, everything under the repo/git root (this file, `Package.swift`, `.claude/`):
 
 - **`Sources/looped/`** — app sources (module `looped`): `loopedApp.swift` + `Models/`, `Services/`,
-  `ViewModels/`, `Views/`, `Utils/` (+ `Assets.xcassets`, excluded from the build).
+  `Stores/`, `ViewModels/`, `Views/`, `Utils/` (+ `Assets.xcassets`, excluded from the build).
 - **`Tests/loopedTests/`** — unit tests (module `loopedTests`), mirroring the source folders.
 - **`plans/`** — remaining-work docs (`README.md` first).
 
@@ -44,21 +44,32 @@ No asset catalog is compiled (`actool` needs Xcode) — no app icon / accent col
 
 ## Architecture (SwiftUI + MVVM, DI'd services)
 
-Layered **View → ViewModel → Service** (+ `Models`), one-way dependencies. `loopedApp.swift`
-(`@main`) is the **composition root**: it builds the services, injects them into the view-models
-via plain constructor injection (no DI framework), and hands the view-models to the views as
-`environmentObject`s. Services sit behind protocols so tests can fake them.
+Layered **View → ViewModel → Store → Service** (+ `Models`), one-way dependencies.
+`loopedApp.swift` (`@main`) is the **composition root**: it builds the services + store, injects
+them via plain constructor injection (no DI framework), wires the auto-advance callback
+(`PlaybackCoordinator.onTrackEnded` → `LibraryViewModel.trackEnded()`, weakly captured — the
+coordinator must not retain the library that retains it), and hands the view-models to the views
+as `environmentObject`s. Services sit behind protocols so tests can fake them.
+
+**Store** (`Stores/`, a UI-free `ObservableObject` both view-models depend on — the
+library↔playback bridge; no VM→VM reference):
+
+- **`PlaybackCoordinator`** — owns the current source (decode via `AudioFileService`, engine
+  rewire, `loaded`) and the transport (play/pause/stop/seek, published clock/duration/load state,
+  the 0.03s timer, `livePlaybackTime()`); end-of-track detection fires `onTrackEnded`
+  (auto-advance) and source changes fire `onSourceChanged` (per-track resets).
 
 **View-models** (`ObservableObject`: `@Published` state + intents, no audio graph, no layout):
 
-- **`PlayerViewModel`** — playback presentation: transport/loop/rate/pitch/volume intents, the
-  published playback state, a 0.03s label-refresh timer, and `livePlaybackTime()` (uncached clock
-  read for per-frame waveform rendering).
+- **`PlayerViewModel`** — playback presentation: a thin projection of `PlaybackCoordinator`
+  (transport state forwarded, `objectWillChange` re-published) plus the playback *parameters* —
+  loop/rate/pitch/volume intents and loop-point state (cleared on `onSourceChanged`).
 - **`LibraryViewModel`** — the track library: import panel, drag & drop intents
   (`handleLibraryDrop(providers:at:)`, `handleWaveformDrop(providers:)`), `add(urls:at:)` as the
   single intake (dedupe + `Track.isSupported` filter + `AVURLAsset` metadata, no decode),
-  `move` (reorder), and `load(_:)` bridging to `PlayerViewModel` (no autoplay). The VM→VM
-  reference is deliberate — it's the library↔playback bridge; services stay clean.
+  `move` (reorder), `load(_:)` bridging to the coordinator (no autoplay), and library-order
+  transport: `next()`/`previous()`/`trackEnded()` (auto-advance) — the *decisions* (ordering,
+  clamping, restart rule) are pure functions in `TrackNavigation`; the VM only executes the move.
 - **`WaveformViewModel`** — waveform viewport state + scrub/snap-back gestures; delegates the
   window/analysis math to `WaveformService`.
 - **`ReorderState`** — small observable owned by `TrackListView` (`@StateObject`, not injected):
@@ -94,20 +105,22 @@ One line per file; the *why* behind non-obvious designs lives in the next sectio
 | `Services/LoopingService.swift` | Pure loop-buffer slice + seam crossfade. |
 | `Services/DroppedFileService.swift` | Drop providers → URLs; folder expansion. |
 | `Services/WaveformService.swift` | Pure waveform analysis + viewport window math. |
-| `ViewModels/PlayerViewModel.swift` | Playback state/intents/timer. |
-| `ViewModels/LibraryViewModel.swift` | Library state/intents; play bridge. |
+| `Stores/PlaybackCoordinator.swift` | Playback store: source + transport + clock timer; track-ended/source-changed callbacks. |
+| `ViewModels/PlayerViewModel.swift` | Transport projection + loop/rate/pitch/volume intents. |
+| `ViewModels/LibraryViewModel.swift` | Library state/intents; play bridge; next/previous/auto-advance. |
 | `ViewModels/WaveformViewModel.swift` | Waveform viewport state; scrub/snap-back. |
 | `ViewModels/ReorderState.swift` | Observable track-list drag state: reorder gap decisions, external drop gap. |
 | `Views/ContentView.swift` | Root layout: sidebar (collapsible, resizable, `@AppStorage`), header, waveform (= quick-load drop zone), bottom bar; hosts `KeyboardHandler`. |
 | `Views/SidebarView.swift` | Left panel: import button, empty-state drop zone, hosts `TrackListView`. |
 | `Views/TrackListView.swift` | Hand-rolled track list (+ private `TrackRow`, drop delegate): themed selection, drag-reorder, insertion indicator. |
-| `Views/ControlsView.swift` | Bottom bar: volume/rate/pitch sliders + sync checkbox, transport, A/B `LoopPanel` with nudge arrows. |
+| `Views/ControlsView.swift` | Bottom bar: volume/rate/pitch sliders + sync checkbox, transport (prev/play/next/stop), A/B `LoopPanel` with nudge arrows. |
 | `Views/WaveformView.swift` | `WaveformDisplayView`: windowed two-layer waveform render, scrub highlight, A/B markers, center playhead. |
 | `Views/Theme.swift` | Design tokens: palette, waveform colors, layout metrics. |
 | `Views/ScrollObserverView.swift` | `NSViewRepresentable`: scroll-wheel + mouse-drag capture → `WaveformViewModel`. |
 | `Utils/KeyboardHandler.swift` | `NSViewRepresentable` key monitor; spacebar → play/pause. |
 | `Utils/TimeFormatter.swift` | `m:ss` time formatting. |
 | `Utils/RowInsertion.swift` | Pure gap-index math for list reorder/drop (gap N = space above row N; matches `Array.move` offsets). |
+| `Utils/TrackNavigation.swift` | Pure library-transport policy: next/previous move decisions, 3 s restart rule. |
 
 **Build/tooling:** `Package.swift` (deps DSWaveformImage + `swift-testing` pinned `.exact("6.1.3")`),
 `justfile` (the `bundle` recipe assembles the `.app`), `.swiftformat`, `Brewfile`, `README.md`.
@@ -139,6 +152,13 @@ One line per file; the *why* behind non-obvious designs lives in the next sectio
   navigation, no auto-scroll while dragging.
 - **List interactions**: single click selects (visual only), double-click loads, **no autoplay**
   anywhere — the transport starts playback.
+- **Library transport**: next/previous move in list order, clamped (no wrap), **preserving the
+  play state** (playing stays playing; paused stays paused — the no-autoplay rule). Previous
+  restarts the current track when > 3 s in (standard player convention); on the first track it
+  always restarts; with an A/B loop armed the restart jumps to the loop's A point instead
+  (`PlaybackService.restartLoop`) — a silent no-op read as a broken button. Auto-advance (track end → next track plays; the last track just stops) is
+  always on for now — plan 05 folds it into user-selectable playthrough modes. A looping track
+  never "ends", so auto-advance can't fire mid-loop.
 - **Rows have a fixed height** (`Theme.trackRowHeight`) so `RowInsertion`'s gap math stays trivial.
 
 ## Tests
@@ -152,11 +172,13 @@ Two layers, mirroring the source folders:
 
 - _Pure logic_: `WaveformServiceTests`, `LoopingServiceTests`, `AudioFileServiceTests` (20-min
   limit), `DroppedFileServiceTests` (folder expansion over a temp fixture tree; provider resolution
-  stays a manual check — needs a live drag pasteboard), `RowInsertionTests` (gap math).
+  stays a manual check — needs a live drag pasteboard), `RowInsertionTests` (gap math),
+  `TrackNavigationTests` (transport policy).
 - _View-model behavior_ via the doubles in `Support/TestDoubles.swift` (`FakePlaybackService` spy,
   `TooLongAudioFileService`, `SlowAudioFileService` for overlapping-request tests, `AudioFixture`
-  temp WAVs): `PlayerViewModelTests`, `LibraryViewModelTests`, `WaveformViewModelTests`, `ReorderStateTests`
-  (drag latching, no-op slots, external-gap precedence).
+  temp WAVs): `PlaybackCoordinatorTests` (end-of-track via the exposed `tick()` — no run-loop
+  spinning), `PlayerViewModelTests`, `LibraryViewModelTests` (incl. next/previous/auto-advance),
+  `WaveformViewModelTests`, `ReorderStateTests` (drag latching, no-op slots, external-gap precedence).
 
 The audio engine and the actual look/sound (loop seamlessness, waveform smoothness) need
 device/eyes/ears — see **`TESTING.md`** (repo root) for the manual QA checklist.
@@ -165,9 +187,10 @@ device/eyes/ears — see **`TESTING.md`** (repo root) for the manual QA checklis
 
 - SwiftUI-first; drop to AppKit (`NSViewRepresentable`) only where SwiftUI can't (scroll/keyboard
   capture).
-- **Layering**: `View → ViewModel → Service`. Views hold no logic; view-models hold `@Published`
-  state + intents; services are plain (no SwiftUI) and sit behind protocols. Keep UI-agnostic code
-  out of views and presentation state out of services.
+- **Layering**: `View → ViewModel → Store → Service`. Views hold no logic; view-models hold
+  `@Published` state + intents; stores are UI-free observables shared across view-models; services
+  are plain (no SwiftUI) and sit behind protocols. Keep UI-agnostic code out of views and
+  presentation state out of services.
 - **Dependency injection**: constructor injection wired at the composition root (`loopedApp`); no
   DI framework. New services get a `protocol` + a `Default…`/`AV…` implementation.
 - `async/await` for I/O; `// MARK:` section markers throughout.

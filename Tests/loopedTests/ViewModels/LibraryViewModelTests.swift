@@ -6,6 +6,7 @@
 //  play bridge (sets currentTrackID, drives the player) via FakePlaybackService.
 //
 
+import AVFoundation
 import Foundation
 @testable import looped
 import Testing
@@ -13,12 +14,24 @@ import Testing
 @MainActor
 struct LibraryViewModelTests {
 	private func makeSUT(files: AudioFileService = DefaultAudioFileService())
-		-> (library: LibraryViewModel, player: PlayerViewModel, playback: FakePlaybackService)
+		-> (library: LibraryViewModel, player: PlaybackCoordinator, playback: FakePlaybackService)
 	{
 		let playback = FakePlaybackService()
-		let player = PlayerViewModel(playback: playback, files: files, looping: DefaultLoopingService())
+		let player = PlaybackCoordinator(playback: playback, files: files)
 		let library = LibraryViewModel(player: player, dropped: DefaultDroppedFileService())
 		return (library, player, playback)
+	}
+
+	/// A library with `count` one-second tracks added and the first one loaded.
+	private func loadedSUT(count: Int) async throws
+		-> (library: LibraryViewModel, player: PlaybackCoordinator, playback: FakePlaybackService)
+	{
+		let sut = makeSUT()
+		let urls = try (0 ..< count).map { _ in try AudioFixture.tempSine(seconds: 1) }
+		await sut.library.add(urls: urls)
+		let first = try #require(sut.library.tracks.first)
+		await sut.library.load(first)
+		return sut
 	}
 
 	// MARK: - add
@@ -124,7 +137,7 @@ struct LibraryViewModelTests {
 
 		#expect(library.tracks.map(\.url) == [wav])
 		#expect(library.currentTrackID == library.tracks.first?.id)
-		#expect(player.audioURL == wav)
+		#expect(player.currentURL == wav)
 		#expect(playback.setSourceCount == 1)
 	}
 
@@ -151,7 +164,7 @@ struct LibraryViewModelTests {
 		await library.load(track)
 
 		#expect(library.currentTrackID == track.id)
-		#expect(player.audioURL == url)
+		#expect(player.currentURL == url)
 		#expect(!player.isPlaying)
 		#expect(playback.setSourceCount == 1)
 		#expect(playback.playCount == 0)
@@ -196,5 +209,145 @@ struct LibraryViewModelTests {
 		#expect(player.isLoadingTrack)
 		await load.value
 		#expect(!player.isLoadingTrack)
+	}
+
+	// MARK: - Next / previous
+
+	@Test func nextMovesToTheFollowingTrackWithoutPlaying() async throws {
+		let (library, player, playback) = try await loadedSUT(count: 3)
+
+		await library.next()
+
+		#expect(library.currentTrackID == library.tracks[1].id)
+		#expect(player.currentURL == library.tracks[1].url)
+		#expect(playback.playCount == 0) // was paused → stays paused
+	}
+
+	@Test func nextClampsAtTheLastTrack() async throws {
+		let (library, _, playback) = try await loadedSUT(count: 2)
+		await library.next()
+		#expect(library.currentTrackID == library.tracks[1].id)
+		let sourcesSoFar = playback.setSourceCount
+
+		await library.next() // already on the last track → no-op
+
+		#expect(library.currentTrackID == library.tracks[1].id)
+		#expect(playback.setSourceCount == sourcesSoFar)
+	}
+
+	@Test func nextPreservesThePlayState() async throws {
+		let (library, player, playback) = try await loadedSUT(count: 2)
+		player.play()
+
+		await library.next()
+
+		#expect(player.isPlaying)
+		#expect(playback.playCount == 2) // initial play + resumed on the new track
+	}
+
+	@Test func previousStepsBackEarlyInTheTrack() async throws {
+		let (library, _, playback) = try await loadedSUT(count: 3)
+		await library.next()
+		#expect(library.currentTrackID == library.tracks[1].id)
+
+		await library.previous() // clock at 0 (< 3 s) → step back
+
+		#expect(library.currentTrackID == library.tracks[0].id)
+		#expect(playback.seekCount == 0)
+	}
+
+	@Test func previousRestartsWhenPastTheThreshold() async throws {
+		let (library, player, playback) = try await loadedSUT(count: 3)
+		await library.next()
+		player.currentTime = 4 // past the 3 s restart threshold
+		playback.fakeCurrentTime = 4
+
+		await library.previous()
+
+		#expect(library.currentTrackID == library.tracks[1].id) // stayed put
+		#expect(playback.lastSeek == 0)
+	}
+
+	@Test func previousOnTheFirstTrackRestartsIt() async throws {
+		let (library, _, playback) = try await loadedSUT(count: 2)
+
+		await library.previous() // no earlier track → restart
+
+		#expect(library.currentTrackID == library.tracks[0].id)
+		#expect(playback.lastSeek == 0)
+	}
+
+	@Test func previousStepsBackAfterALoadResetTheClock() async throws {
+		// Playing track 1 past 3 s, then double-click loads track 2: the load
+		// resets the clock, so previous steps back (no spurious restart).
+		let (library, player, playback) = try await loadedSUT(count: 3)
+		player.play()
+		playback.fakeCurrentTime = 10
+		player.tick()
+
+		await library.load(library.tracks[1])
+
+		await library.previous()
+		#expect(library.currentTrackID == library.tracks[0].id)
+	}
+
+	@Test func previousRestartsAnArmedLoopAtItsAPoint() async throws {
+		// Last track, > 3 s in, loop armed: previous restarts the loop at A —
+		// it never falls through to a dead track-restart while looping.
+		let (library, player, playback) = try await loadedSUT(count: 2)
+		await library.next()
+		try playback.scheduleLoop(loopBuffer(), startTime: 4, length: 2) // A = 4 s
+		player.currentTime = 5
+
+		await library.previous()
+
+		#expect(library.currentTrackID == library.tracks[1].id) // stayed put
+		#expect(playback.restartLoopCount == 1)
+		#expect(playback.isLooping)
+		#expect(player.currentTime == 4) // back at A
+	}
+
+	private func loopBuffer() throws -> AVAudioPCMBuffer {
+		let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 8000, channels: 1))
+		return try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 8000))
+	}
+
+	// MARK: - Auto-advance
+
+	@Test func trackEndedPlaysTheNextTrack() async throws {
+		let (library, player, playback) = try await loadedSUT(count: 2)
+
+		await library.trackEnded()
+
+		#expect(library.currentTrackID == library.tracks[1].id)
+		#expect(player.isPlaying)
+		#expect(playback.playCount == 1)
+	}
+
+	@Test func trackEndedOnTheLastTrackDoesNothing() async throws {
+		let (library, player, playback) = try await loadedSUT(count: 1)
+
+		await library.trackEnded()
+
+		#expect(library.currentTrackID == library.tracks[0].id)
+		#expect(!player.isPlaying)
+		#expect(playback.playCount == 0)
+	}
+
+	@Test func endOfTrackAutoAdvancesThroughTheWiring() async throws {
+		// The full loop: coordinator tick past duration → onTrackEnded →
+		// library.trackEnded() → next track loads and plays.
+		let (library, player, playback) = try await loadedSUT(count: 2)
+		player.onTrackEnded = { Task { await library.trackEnded() } }
+		player.play()
+		playback.fakeCurrentTime = 2
+		player.tick()
+		// Let the wired Task run to completion.
+		for _ in 0 ..< 200 where library.currentTrackID != library.tracks[1].id {
+			try await Task.sleep(for: .milliseconds(10))
+		}
+
+		#expect(library.currentTrackID == library.tracks[1].id)
+		#expect(player.isPlaying)
 	}
 }

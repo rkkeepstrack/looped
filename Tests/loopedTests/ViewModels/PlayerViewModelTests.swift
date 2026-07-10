@@ -28,9 +28,14 @@ final class PlayerViewModelTests {
 		try? FileManager.default.removeItem(at: fixture)
 	}
 
+	private func makeViewModel(files: AudioFileService = DefaultAudioFileService()) -> PlayerViewModel {
+		let transport = PlaybackCoordinator(playback: fake, files: files)
+		return PlayerViewModel(transport: transport, playback: fake, looping: DefaultLoopingService())
+	}
+
 	/// A view-model with the spy player and a really-decoded 1 s track loaded.
 	private func loadedViewModel() async -> PlayerViewModel {
-		let vm = PlayerViewModel(playback: fake, files: DefaultAudioFileService(), looping: DefaultLoopingService())
+		let vm = makeViewModel()
 		await vm.load(url: fixture)
 		return vm
 	}
@@ -49,7 +54,7 @@ final class PlayerViewModelTests {
 	}
 
 	@Test func loadingTooLongFileSurfacesAnError() async {
-		let vm = PlayerViewModel(playback: fake, files: TooLongAudioFileService(), looping: DefaultLoopingService())
+		let vm = makeViewModel(files: TooLongAudioFileService())
 		await vm.load(url: fixture)
 
 		#expect(vm.loadError == "That track is longer than 20 minutes.")
@@ -87,7 +92,7 @@ final class PlayerViewModelTests {
 	}
 
 	@Test func togglePlayPauseDoesNothingWithoutALoadedFile() {
-		let vm = PlayerViewModel(playback: fake, files: DefaultAudioFileService(), looping: DefaultLoopingService())
+		let vm = makeViewModel()
 		vm.togglePlayPause()
 		#expect(!vm.isPlaying)
 		#expect(fake.playCount == 0)
