@@ -29,10 +29,12 @@ enum Theme {
 	static let waveformPlayed = accent
 	/// Upcoming portion of the waveform.
 	static let waveformUpcoming = Color(red: 0.28, green: 0.28, blue: 0.31)
-	/// Translucent fill shading the A–B loop region.
-	static let loopRegion = accent.opacity(0.15)
-	static let loopMarkerA = accent
-	static let loopMarkerB = Color(red: 1.0, green: 0.66, blue: 0.30) // lighter amber
+	/// Translucent fill shading the A–B loop region (matches the markers' blue).
+	static let loopRegion = loopMarkerA.opacity(0.12)
+	/// Loop markers: cool blues so they stand apart from the played-orange
+	/// waveform; A lighter, B deeper, so the two also differ from each other.
+	static let loopMarkerA = Color(red: 0.42, green: 0.72, blue: 0.95) // light sky blue
+	static let loopMarkerB = Color(red: 0.30, green: 0.55, blue: 0.90) // deeper blue
 	/// Fixed center playhead line.
 	static let iterator = Color.white.opacity(0.85)
 	/// Scrub highlight — subtle light blue (the cool counterpart to the warm

@@ -204,12 +204,6 @@ final class PlayerViewModel: ObservableObject {
 		applyPitchAndRate()
 	}
 
-	/// The pitch shift the synced (varispeed) mode implies at the current rate —
-	/// shown on the disabled pitch slider so the UI reflects what's audible.
-	var impliedSyncSemitones: Float {
-		12 * log2(rate)
-	}
-
 	/// Push the full pitch/rate state to the engine. Neutralize the inactive unit
 	/// *before* raising the active one so mode switches never double-shift.
 	private func applyPitchAndRate() {

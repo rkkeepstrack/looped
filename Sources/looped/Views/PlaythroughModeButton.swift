@@ -3,8 +3,8 @@
 //  looped
 //
 //  One button cycling the end-of-track playthrough mode (loop → advance →
-//  stop), icon per mode, tooltip explaining the current one. A small
-//  self-contained view so plan 07 can move it into the bottom-bar transport.
+//  stop), icon per mode, tooltip explaining the current one. Hosted in the
+//  bottom-bar transport cluster.
 //
 
 import SwiftUI
@@ -21,6 +21,7 @@ struct PlaythroughModeButton: View {
 				.frame(width: 20)
 		}
 		.buttonStyle(.bordered)
+		.hoverBrightness()
 		.help(help)
 	}
 

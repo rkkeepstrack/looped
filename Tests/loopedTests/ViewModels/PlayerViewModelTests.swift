@@ -454,14 +454,6 @@ final class PlayerViewModelTests {
 		#expect(fake.lastPitchCents == 500)
 	}
 
-	@Test func impliedSyncSemitonesFollowsTheRate() async {
-		let vm = await loadedViewModel()
-		vm.rate = 2
-		#expect(abs(vm.impliedSyncSemitones - 12) <= 1e-4)
-		vm.rate = 1
-		#expect(abs(vm.impliedSyncSemitones) <= 1e-4)
-	}
-
 	// MARK: - Derived
 
 	@Test func progressInPercent() async {

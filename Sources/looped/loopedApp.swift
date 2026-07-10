@@ -65,5 +65,46 @@ struct loopedApp: App {
 				.background(Theme.background)
 				.preferredColorScheme(.dark)
 		}
+		.commands {
+			AppCommands(player: player, library: library)
+		}
+	}
+}
+
+/// The native menu bar: File ▸ Open… (⌘O) plus a Playback menu mirroring the
+/// transport. A separate `Commands` struct with `@ObservedObject` view-models
+/// so the items (Play/Pause title, mode checkmark, enablement) stay live.
+private struct AppCommands: Commands {
+	@ObservedObject var player: PlayerViewModel
+	@ObservedObject var library: LibraryViewModel
+
+	var body: some Commands {
+		CommandGroup(replacing: .newItem) {
+			Button("Open…") {
+				Task { await library.openFilesAndLoad() }
+			}
+			.keyboardShortcut("o")
+		}
+
+		CommandMenu("Playback") {
+			Button(player.isPlaying ? "Pause" : "Play") {
+				player.togglePlayPause()
+			}
+			.disabled(player.audioURL == nil)
+
+			Button("Stop") {
+				player.stop()
+			}
+			.disabled(player.audioURL == nil)
+
+			Divider()
+
+			Picker("When a Track Ends", selection: $player.playthroughMode) {
+				Text("Loop This Track").tag(PlaythroughMode.loop)
+				Text("Play the Next Track").tag(PlaythroughMode.advance)
+				Text("Stop").tag(PlaythroughMode.stop)
+			}
+			.pickerStyle(.inline)
+		}
 	}
 }

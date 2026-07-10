@@ -22,10 +22,17 @@ struct SidebarView: View {
 						.frame(maxWidth: .infinity)
 				}
 				.buttonStyle(.bordered)
+				.hoverBrightness()
 
-				// End-of-track mode; sidebar-hosted until plan 07 moves it to
-				// the transport cluster.
-				PlaythroughModeButton()
+				Button {
+					Task { await library.openFolder() }
+				} label: {
+					Label("Import Folder", systemImage: "folder")
+						.frame(maxWidth: .infinity)
+				}
+				.buttonStyle(.bordered)
+				.hoverBrightness()
+				.help("Import a folder (all supported audio files inside)")
 			}
 			.controlSize(.large)
 

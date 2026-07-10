@@ -1,5 +1,5 @@
 //
-//  WaveformView.swift
+//  LiveWaveformView.swift
 //  looped
 //
 //  Created by Raphael Kalinowsi on 30.10.25.
@@ -9,12 +9,18 @@ import AppKit
 import DSWaveformImage
 import SwiftUI
 
-struct WaveformDisplayView: View {
+/// The main waveform: a windowed slice around the playhead, re-rendered live
+/// per display frame (vs the minimap's whole-song strip).
+struct LiveWaveformView: View {
 	@EnvironmentObject var audioPlayer: PlayerViewModel
 	@EnvironmentObject var offsetCalculator: WaveformViewModel
 
 	/// Noise-floor cutoff (dB) for analysis — higher (less negative) favors peaks.
 	private let waveformNoiseFloor: Float = -35
+
+	/// Vertical inset for the waveform itself — the loop markers, region, and
+	/// playhead still span the full frame height.
+	private let verticalInset: CGFloat = 48
 
 	var body: some View {
 		ZStack {
@@ -26,6 +32,7 @@ struct WaveformDisplayView: View {
 					TimelineView(.animation(minimumInterval: nil, paused: !audioPlayer.isPlaying)) { _ in
 						let width = geo.size.width
 						let height = geo.size.height
+						let waveHeight = max(0, height - 2 * verticalInset)
 						let time = audioPlayer.livePlaybackTime()
 						// A bucket-aligned chunk around the playhead — translated smoothly
 						// via `offset`, so only a viewport-sized slice is ever drawn.
@@ -35,9 +42,9 @@ struct WaveformDisplayView: View {
 							// Panning chunk: waveform + loop markers, offset under the iterator.
 							ZStack {
 								SyncWaveformCanvas(samples: win.samples, configuration: configuration(color: Theme.waveformUpcoming))
-									.frame(width: win.width, height: height)
+									.frame(width: win.width, height: waveHeight)
 								SyncWaveformCanvas(samples: win.samples, configuration: configuration(color: Theme.waveformPlayed))
-									.frame(width: win.width, height: height)
+									.frame(width: win.width, height: waveHeight)
 									.mask(alignment: .leading) { Rectangle().frame(width: win.playheadX) }
 
 								// Scrub highlight (bug-fixes.md #1): while scrubbing, tint the span
@@ -51,7 +58,7 @@ struct WaveformDisplayView: View {
 									let lower = min(win.playheadX, centerX)
 									let upper = max(win.playheadX, centerX)
 									SyncWaveformCanvas(samples: win.samples, configuration: configuration(color: Theme.waveformScrub))
-										.frame(width: win.width, height: height)
+										.frame(width: win.width, height: waveHeight)
 										.mask(alignment: .leading) {
 											Rectangle()
 												.frame(width: upper - lower)
@@ -91,28 +98,27 @@ struct WaveformDisplayView: View {
 					.controlSize(.large)
 					.tint(Theme.accent)
 			}
-
-			// Transparent overlay capturing scroll / drag to scrub the timeline.
-			ScrollObserverView(
-				offset: Binding(
-					get: { offsetCalculator.currentScrollOffset },
-					set: { offsetCalculator.currentScrollOffset = $0 }
-				),
-				onScrollChange: { _ in
-					offsetCalculator.onScrollChange(playbackTime: audioPlayer.livePlaybackTime())
-				},
-				onScrollEnd: {
-					let target = offsetCalculator.scrolledTime(playbackTime: audioPlayer.livePlaybackTime())
-					if audioPlayer.jumpTo(time: target) {
-						// Seeked: the view is already at the target, snap immediately.
-						offsetCalculator.endScrubImmediately()
-					} else {
-						// Loop / out-of-bounds: ease back to the live playhead.
-						offsetCalculator.animateSnapBack(playbackTime: audioPlayer.livePlaybackTime())
-					}
-				}
-			)
 		}
+		// Transparent overlay capturing scroll / drag to scrub the timeline.
+		.observeScrolling(
+			offset: Binding(
+				get: { offsetCalculator.currentScrollOffset },
+				set: { offsetCalculator.currentScrollOffset = $0 }
+			),
+			onChange: { _ in
+				offsetCalculator.onScrollChange(playbackTime: audioPlayer.livePlaybackTime())
+			},
+			onEnd: {
+				let target = offsetCalculator.scrolledTime(playbackTime: audioPlayer.livePlaybackTime())
+				if audioPlayer.jumpTo(time: target) {
+					// Seeked: the view is already at the target, snap immediately.
+					offsetCalculator.endScrubImmediately()
+				} else {
+					// Loop / out-of-bounds: ease back to the live playhead.
+					offsetCalculator.animateSnapBack(playbackTime: audioPlayer.livePlaybackTime())
+				}
+			}
+		)
 	}
 
 	// MARK: - Loop region + markers (positioned in chunk coordinates)
@@ -150,10 +156,12 @@ struct WaveformDisplayView: View {
 			Rectangle().fill(color).frame(width: 1.5, height: height)
 			Text(label)
 				.font(.caption2.weight(.bold))
-				.foregroundStyle(Color.black)
-				.padding(.horizontal, 5)
-				.padding(.vertical, 1)
-				.background(color, in: Capsule())
+				.foregroundStyle(.black)
+				.frame(width: 16, height: 16)
+				.background(color, in: Circle())
+				// The enclosing frame is the 1.5 pt marker line — without this
+				// the proposed width truncates the label to an empty badge.
+				.fixedSize()
 		}
 		.frame(width: 1.5, height: height)
 		.position(x: x, y: height / 2)
