@@ -290,7 +290,11 @@ struct LibraryViewModelTests {
 		let track = try #require(library.tracks.first)
 
 		let load = Task { _ = await library.load(track) }
-		try await Task.sleep(for: .milliseconds(20))
+		// Poll instead of a fixed sleep — a fixed delay races the load task's
+		// start (and its 80ms fake decode) on slow CI runners.
+		for _ in 0 ..< 200 where !player.isLoadingTrack {
+			try await Task.sleep(for: .milliseconds(10))
+		}
 		#expect(player.isLoadingTrack)
 		await load.value
 		#expect(!player.isLoadingTrack)
@@ -602,8 +606,9 @@ struct LibraryViewModelTests {
 		player.play()
 		playback.fakeCurrentTime = 2
 		player.tick()
-		// Let the wired Task run to completion.
-		for _ in 0 ..< 200 where library.currentTrackID != library.tracks[1].id {
+		// Let the wired Task run to completion. Wait on isPlaying — the *last*
+		// effect of the chain; currentTrackID flips inside load(), before play().
+		for _ in 0 ..< 200 where !player.isPlaying {
 			try await Task.sleep(for: .milliseconds(10))
 		}
 
