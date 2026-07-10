@@ -22,6 +22,11 @@ struct MinimapView: View {
 	/// Whole-song envelope downsampled to the strip — recomputed on analysis/width
 	/// changes only, not per display frame.
 	@State private var overview: [Float] = []
+	/// Strip width `overview` was downsampled for. The canvas draws at fixed
+	/// per-sample density, so between refreshes the envelope is rendered at this
+	/// width and scaled onto the live width (compresses/stretches with the resize
+	/// instead of clipping or leaving a gap).
+	@State private var overviewWidth: CGFloat = 0
 
 	/// Box drag vs. click, decided at the first drag change by the start location.
 	private enum DragMode {
@@ -35,18 +40,36 @@ struct MinimapView: View {
 
 	@State private var dragMode: DragMode = .idle
 
+	/// Debounces the overview recompute across resizes (sidebar animation, window
+	/// drag): the stale envelope just stretches with the frame — re-downsampling
+	/// per frame shimmers.
+	@State private var overviewRefresh: Task<Void, Never>?
+
 	var body: some View {
 		GeometryReader { geo in
-			ZStack {
+			ZStack(alignment: .leading) {
 				if let duration = audioPlayer.duration, duration > 0, !overview.isEmpty {
-					strip(width: geo.size.width, height: geo.size.height, duration: duration)
+					// The strip is laid out entirely in the *settled* width's
+					// coordinates and mapped onto the live width by one render-only
+					// scale: nothing inside changes during a resize (the TimelineView
+					// would reset an in-flight layout tween and snap), and the scale
+					// change rides the sidebar's animated transaction — the whole
+					// strip compresses/stretches with it. The debounced refresh then
+					// swaps in the re-downsampled envelope at scale 1, pixel-identical.
+					strip(height: geo.size.height, duration: duration)
+						.scaleEffect(
+							x: overviewWidth > 0 ? geo.size.width / overviewWidth : 1,
+							y: 1,
+							anchor: .leading
+						)
 				}
 			}
-			.frame(maxWidth: .infinity, maxHeight: .infinity)
+			.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+			.clipped()
 			.contentShape(Rectangle())
 			.gesture(stripGesture(width: geo.size.width))
 			.onAppear { refreshOverview(width: geo.size.width) }
-			.onChange(of: geo.size.width) { _, newWidth in refreshOverview(width: newWidth) }
+			.onChange(of: geo.size.width) { _, newWidth in scheduleOverviewRefresh(width: newWidth) }
 			.onChange(of: offsetCalculator.samples) { _, _ in refreshOverview(width: geo.size.width) }
 		}
 		.frame(height: Theme.overviewHeight)
@@ -55,15 +78,19 @@ struct MinimapView: View {
 
 	// MARK: - Strip rendering
 
-	private func strip(width: CGFloat, height: CGFloat, duration: TimeInterval) -> some View {
+	/// Rendered in settled-width coordinates (`overviewWidth`) — the caller's
+	/// scaleEffect maps it onto the live width; everything in x is linear in the
+	/// strip width, so the scaled positions are exact.
+	private func strip(height: CGFloat, duration: TimeInterval) -> some View {
 		TimelineView(.animation(minimumInterval: nil, paused: !audioPlayer.isPlaying)) { _ in
+			let width = overviewWidth
 			let mapper = OverviewMapper(stripWidth: width, duration: duration)
 			let time = audioPlayer.livePlaybackTime()
 			let playedX = mapper.x(forTime: time)
 
 			ZStack(alignment: .leading) {
-				SyncWaveformCanvas(samples: overview, configuration: configuration(color: Theme.waveformUpcoming))
-				SyncWaveformCanvas(samples: overview, configuration: configuration(color: Theme.overviewPlayed))
+				envelope(color: Theme.waveformUpcoming, height: height)
+				envelope(color: Theme.overviewPlayed, height: height)
 					.mask(alignment: .leading) { Rectangle().frame(width: max(0, playedX)) }
 
 				// Scrub tint between the played edge and the scrub cursor, mirroring
@@ -72,7 +99,7 @@ struct MinimapView: View {
 					let centerX = mapper.x(forTime: offsetCalculator.centerTime(playbackTime: time))
 					let lower = min(playedX, centerX)
 					let upper = max(playedX, centerX)
-					SyncWaveformCanvas(samples: overview, configuration: configuration(color: Theme.waveformScrub))
+					envelope(color: Theme.waveformScrub, height: height)
 						.mask(alignment: .leading) {
 							Rectangle()
 								.frame(width: max(0, upper - lower))
@@ -92,6 +119,11 @@ struct MinimapView: View {
 			}
 			.frame(width: width, height: height)
 		}
+	}
+
+	private func envelope(color: Color, height: CGFloat) -> some View {
+		SyncWaveformCanvas(samples: overview, configuration: configuration(color: color))
+			.frame(width: max(1, overviewWidth), height: height)
 	}
 
 	@ViewBuilder
@@ -183,6 +215,16 @@ struct MinimapView: View {
 
 	private func refreshOverview(width: CGFloat) {
 		overview = offsetCalculator.overviewSamples(targetCount: Int(width * offsetCalculator.sampleScale))
+		overviewWidth = width
+	}
+
+	private func scheduleOverviewRefresh(width: CGFloat) {
+		overviewRefresh?.cancel()
+		overviewRefresh = Task { @MainActor in
+			try? await Task.sleep(for: .seconds(Theme.sidebarAnimationDuration + 0.05))
+			guard !Task.isCancelled else { return }
+			refreshOverview(width: width)
+		}
 	}
 
 	private func configuration(color: Color) -> Waveform.Configuration {

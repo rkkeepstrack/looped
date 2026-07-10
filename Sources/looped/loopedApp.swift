@@ -12,7 +12,7 @@ struct loopedApp: App {
 	/// Composition root: build the services and inject them into the view-models.
 	@StateObject private var player: PlayerViewModel
 	@StateObject private var library: LibraryViewModel
-	@StateObject private var waveform = WaveformViewModel(service: DefaultWaveformService())
+	@StateObject private var waveform: WaveformViewModel
 	@StateObject private var toasts: ToastCenter
 
 	init() {
@@ -71,8 +71,13 @@ struct loopedApp: App {
 		library.applyParameters = { [weak player] in
 			player?.currentParameters = $0
 		}
+		let waveform = WaveformViewModel(service: DefaultWaveformService())
+		// Deferred shrinks must outlast the sidebar animation (the VM stays
+		// Theme-free, so the coupling is wired here).
+		waveform.viewportShrinkDelay = Theme.sidebarAnimationDuration + 0.05
 		_player = StateObject(wrappedValue: player)
 		_library = StateObject(wrappedValue: library)
+		_waveform = StateObject(wrappedValue: waveform)
 		_toasts = StateObject(wrappedValue: toasts)
 	}
 

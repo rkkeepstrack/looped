@@ -76,12 +76,17 @@ struct LiveWaveformView: View {
 								.fill(Theme.iterator)
 								.frame(width: 2)
 						}
+						// Pin to the *actual* frame: GeometryReader aligns its child
+						// top-leading and the stack would size to the chunk (stored
+						// width) — the playhead must center on the live width, or a
+						// deferred shrink lands as a visible jump.
+						.frame(width: width, height: height)
 						.clipped()
 						.onAppear {
-							offsetCalculator.waveformWidth = width
+							offsetCalculator.updateViewportWidth(width)
 							prepareWaveform(url: url)
 						}
-						.onChange(of: width) { _, newWidth in offsetCalculator.waveformWidth = newWidth }
+						.onChange(of: width) { _, newWidth in offsetCalculator.updateViewportWidth(newWidth) }
 						.onChange(of: audioPlayer.audioURL) { _, _ in prepareWaveform(url: audioPlayer.audioURL) }
 						.onChange(of: audioPlayer.duration) { _, _ in prepareWaveform(url: audioPlayer.audioURL) }
 					}
