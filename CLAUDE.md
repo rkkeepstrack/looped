@@ -190,7 +190,11 @@ One line per file; the *why* behind non-obvious designs lives in the next sectio
   `TimelineView(.animation)` + `PlayerViewModel.livePlaybackTime()` (the 0.03s timer only feeds
   labels). The canvas draws **synchronously** (`SyncWaveformCanvas`, a `WaveformLiveCanvas` clone)
   so the reslice and its compensating offset commit in one pass — the library's async canvas
-  lagged a frame and made the seam flicker. The main waveform draws *peak-morphed* samples
+  lagged a frame and made the seam flicker. The chunk's translate is **quantized to whole
+  stripe pitches** (`WaveformService.window`): the stripes stay glued to fixed screen positions
+  and the content flows through them in whole-stripe steps — a smooth fractional pan strobes
+  the 4 pt stripe pattern (~150° phase flip per 60 Hz frame at 100 px/s), which reads as
+  whole-waveform flicker (bug-fixes #1). The main waveform draws *peak-morphed* samples
   (`WaveformService.peakMorph`, a power curve applied once per analysis) so evenly loud sections
   still show louder/quieter detail for loop hunting; the minimap keeps the raw envelope. A subtle
   grey midline (`Theme.waveformCenterline`) marks the mirror axis.
