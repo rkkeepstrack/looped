@@ -1,6 +1,6 @@
 cask "looped" do
   version "1.0.0"
-  sha256 "de50e285ba409e8696354c3d93daaac03ae57679b47fc24613d5aa1d3954ad8b"
+  sha256 "a847a14627fa84de48b23cacd0df0f6e010284389857c68b917127ed7897be98"
 
   url "https://github.com/rkkeepstrack/looped/releases/download/v#{version}/Looped-#{version}.zip"
   name "Looped"
