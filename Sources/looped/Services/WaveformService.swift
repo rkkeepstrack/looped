@@ -43,6 +43,36 @@ struct WaveformWindow {
 	var chunkStartSample: Double
 }
 
+/// Pure song-time ↔ strip-pixel mapping for the full-track overview (minimap).
+/// The strip shows the whole song across its width; the box is the big
+/// waveform's visible window intersected with the song bounds.
+struct OverviewMapper {
+	var stripWidth: CGFloat
+	var duration: TimeInterval
+
+	func x(forTime time: TimeInterval) -> CGFloat {
+		guard duration > 0 else { return 0 }
+		return CGFloat(time / duration) * stripWidth
+	}
+
+	func time(forX x: CGFloat) -> TimeInterval {
+		guard stripWidth > 0 else { return 0 }
+		let t = TimeInterval(x / stripWidth) * duration
+		return min(max(0, t), duration)
+	}
+
+	/// The visible-window box in strip coordinates: `visibleSeconds` centered on
+	/// `centerTime`, intersected with the song — shrinks at the edges rather than
+	/// hanging past the strip.
+	func box(centerTime: TimeInterval, visibleSeconds: TimeInterval) -> (x: CGFloat, width: CGFloat) {
+		guard duration > 0 else { return (0, 0) }
+		let start = max(0, min(centerTime - visibleSeconds / 2, duration))
+		let end = max(0, min(centerTime + visibleSeconds / 2, duration))
+		let startX = x(forTime: start)
+		return (startX, x(forTime: end) - startX)
+	}
+}
+
 protocol WaveformService: Sendable {
 	/// Analyze the whole song into an amplitude envelope (off the main thread).
 	func analyze(url: URL, duration: TimeInterval, noiseFloor: Float, samplesPerSecond: CGFloat) async -> [Float]
@@ -53,6 +83,11 @@ protocol WaveformService: Sendable {
 
 	/// x of a song time within a chunk (for loop markers/region).
 	func chunkX(time: TimeInterval, layout: WaveformLayout, chunkStartSample: Double) -> CGFloat
+
+	/// Downsample the whole-song envelope to `targetCount` samples for the
+	/// overview strip — per-bucket **min** (samples are inverted dB: 1 == silence,
+	/// 0 == loudest), so peaks survive the reduction. No second decode.
+	func overviewSamples(samples: [Float], targetCount: Int) -> [Float]
 }
 
 struct DefaultWaveformService: WaveformService {
@@ -101,5 +136,15 @@ struct DefaultWaveformService: WaveformService {
 
 	func chunkX(time: TimeInterval, layout: WaveformLayout, chunkStartSample: Double) -> CGFloat {
 		CGFloat(time * Double(layout.sampleRate) - chunkStartSample) / layout.sampleScale
+	}
+
+	func overviewSamples(samples: [Float], targetCount: Int) -> [Float] {
+		guard targetCount > 0, !samples.isEmpty else { return [] }
+		guard samples.count > targetCount else { return samples }
+		return (0 ..< targetCount).map { i in
+			let start = i * samples.count / targetCount
+			let end = max(start + 1, (i + 1) * samples.count / targetCount)
+			return samples[start ..< min(end, samples.count)].min() ?? 1
+		}
 	}
 }

@@ -94,6 +94,24 @@ final class WaveformViewModel: ObservableObject {
 		service.chunkX(time: time, layout: layout, chunkStartSample: chunkStartSample)
 	}
 
+	// MARK: - Overview (minimap)
+
+	/// Whole-song envelope downsampled for the overview strip.
+	func overviewSamples(targetCount: Int) -> [Float] {
+		service.overviewSamples(samples: samples, targetCount: targetCount)
+	}
+
+	/// Drag of the overview highlight box: a strip-pixel delta converted into the
+	/// main waveform's scroll-offset scale — the box drag *is* a scrub (anchor
+	/// latched, playback keeps running; the release seek/snap-back is the view's
+	/// call, same as the big waveform). Dragging the box right moves the viewport
+	/// forward, so the offset decreases.
+	func overviewScrub(byStripDelta deltaX: CGFloat, stripWidth: CGFloat, duration: TimeInterval, playbackTime: TimeInterval) {
+		guard stripWidth > 0, duration > 0 else { return }
+		onScrollChange(playbackTime: playbackTime)
+		currentScrollOffset -= deltaX * CGFloat(duration) / stripWidth * pixelsPerSecond
+	}
+
 	// MARK: - Scrubbing
 
 	/// Called on every scroll/drag delta; latches the anchor on the first one.

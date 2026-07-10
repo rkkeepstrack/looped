@@ -85,7 +85,8 @@ library↔playback bridge; no VM→VM reference):
 - **`LoopingService`** — pure loop DSP: slices [A, B) and crossfades the seam.
 - **`DroppedFileService`** — drag & drop plumbing: `NSItemProvider` → URLs, recursive folder
   expansion filtered by `Track.isSupported`.
-- **`WaveformService`** — pure waveform math: whole-song analysis + bucket-aligned window slice.
+- **`WaveformService`** — pure waveform math: whole-song analysis, bucket-aligned window slice,
+  overview downsampling; hosts `OverviewMapper` (strip-pixel ↔ song-time math for the minimap).
 
 **Models:** `LoadedAudio` (decoded file/buffer/format/duration). `Track` (library entry; also hosts
 `supportedTypes`/`isSupported(url:)`, the single audio-type predicate shared by panel, intake, and
@@ -104,17 +105,19 @@ One line per file; the *why* behind non-obvious designs lives in the next sectio
 | `Services/AudioFileService.swift` | Async decode; 20-min limit. |
 | `Services/LoopingService.swift` | Pure loop-buffer slice + seam crossfade. |
 | `Services/DroppedFileService.swift` | Drop providers → URLs; folder expansion. |
-| `Services/WaveformService.swift` | Pure waveform analysis + viewport window math. |
+| `Services/WaveformService.swift` | Pure waveform analysis + viewport window math + overview downsampling/mapper. |
 | `Stores/PlaybackCoordinator.swift` | Playback store: source + transport + clock timer; track-ended/source-changed callbacks. |
 | `ViewModels/PlayerViewModel.swift` | Transport projection + loop/rate/pitch/volume intents. |
 | `ViewModels/LibraryViewModel.swift` | Library state/intents; play bridge; next/previous/auto-advance. |
 | `ViewModels/WaveformViewModel.swift` | Waveform viewport state; scrub/snap-back. |
 | `ViewModels/ReorderState.swift` | Observable track-list drag state: reorder gap decisions, external drop gap. |
-| `Views/ContentView.swift` | Root layout: sidebar (collapsible, resizable, `@AppStorage`), header, waveform (= quick-load drop zone), bottom bar; hosts `KeyboardHandler`. |
+| `Views/ContentView.swift` | Root layout: sidebar (collapsible, resizable, `@AppStorage`), header, waveform (= quick-load drop zone), minimap strip, bottom bar; hosts `KeyboardHandler`. |
 | `Views/SidebarView.swift` | Left panel: import button, empty-state drop zone, hosts `TrackListView`. |
 | `Views/TrackListView.swift` | Hand-rolled track list (+ private `TrackRow`, drop delegate): themed selection, drag-reorder, insertion indicator. |
 | `Views/ControlsView.swift` | Bottom bar: volume/rate/pitch sliders + sync checkbox, transport (prev/play/next/stop), A/B `LoopPanel` with nudge arrows. |
 | `Views/WaveformView.swift` | `WaveformDisplayView`: windowed two-layer waveform render, scrub highlight, A/B markers, center playhead. |
+| `Views/TrackOverviewView.swift` | Full-track minimap strip: whole-song envelope, viewport highlight box (drag = scrub, outside click = seek), loop tint. |
+| `Views/SyncWaveformCanvas.swift` | Synchronous DSWaveformImage canvas shared by the main waveform and the minimap. |
 | `Views/Theme.swift` | Design tokens: palette, waveform colors, layout metrics. |
 | `Views/ScrollObserverView.swift` | `NSViewRepresentable`: scroll-wheel + mouse-drag capture → `WaveformViewModel`. |
 | `Utils/KeyboardHandler.swift` | `NSViewRepresentable` key monitor; spacebar → play/pause. |
@@ -143,6 +146,13 @@ One line per file; the *why* behind non-obvious designs lives in the next sectio
   labels). The canvas draws **synchronously** (`SyncWaveformCanvas`, a `WaveformLiveCanvas` clone)
   so the reslice and its compensating offset commit in one pass — the library's async canvas
   lagged a frame and made the seam flicker.
+- **Minimap (full-track overview)**: box-drag is a scrub (it feeds the same `WaveformViewModel`
+  scroll-offset/anchor machinery, converted from strip pixels) and the release **seeks** to the
+  dropped position — identical semantics to the big waveform's scrub, incl. snap-back when the
+  seek is refused (loop armed / out of bounds). A stationary click *outside* the box seeks via
+  `PlayerViewModel.jumpTo`; a click inside the box is deliberately inert (grabbing the box must
+  not jump playback). Envelope = analyzed samples downsampled per-bucket **min** (samples are
+  inverted dB, 1 = silence) so peaks survive; rendered filled, not striped.
 - **The track list is hand-rolled** (`TrackListView`, plain `VStack`, not `List`): the NSTableView under a native
   List draws its selection highlight and drop insertion indicator in the system accent color with
   no public recolor API, which clashed with the theme. Reorder drag is a per-row

@@ -65,6 +65,14 @@ real track (WAV/MP3/AIFF) a couple of minutes long. Launch with `just run`.
       playhead with an ease-out, or seeks if released in bounds. **[auto: state]**
 - [ ] Out-of-bounds scrub keeps playing and eases back rather than crashing. **[auto]**
 
+**Overview strip (minimap)**
+- [ ] The strip under the waveform shows the whole song; the highlight box tracks
+      playback and any scrub of the big view. **[auto: mapping]**
+- [ ] Dragging the box pans the big waveform (playback keeps running); release
+      **seeks** to the dropped position (snap-back only when looping/out of bounds). **[auto: state]**
+- [ ] Clicking outside the box seeks there; clicking **inside** the box does nothing.
+- [ ] Played-orange tint, scrub tint, and the A/B loop tint/lines mirror the big view.
+
 **Speed / volume**
 - [ ] Speed slider changes tempo without altering pitch; volume slider works. **[auto: wiring]**
 
