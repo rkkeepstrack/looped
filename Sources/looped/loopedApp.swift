@@ -13,6 +13,7 @@ struct loopedApp: App {
 	@StateObject private var player: PlayerViewModel
 	@StateObject private var library: LibraryViewModel
 	@StateObject private var waveform = WaveformViewModel(service: DefaultWaveformService())
+	@StateObject private var toasts: ToastCenter
 
 	init() {
 		// `.help` tooltips ride NSToolTip, whose initial delay is an app-wide
@@ -20,11 +21,20 @@ struct loopedApp: App {
 		// controls like the playthrough-mode button. `register` doesn't persist.
 		UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 500])
 
+		let toasts = ToastCenter()
 		let looping = DefaultLoopingService()
 		let playback = AVPlaybackService(looping: looping)
+		// A dead engine (init or a per-track rewire) surfaces as a toast — the
+		// service itself stays UI-free. Strong capture on purpose: there's no
+		// cycle (service → closure → center), and a weak one could drop the
+		// held init-time failure delivered during construction.
+		playback.onEngineStartFailure = { error in
+			Task { @MainActor in toasts.report(error) }
+		}
 		let transport = PlaybackCoordinator(
 			playback: playback,
-			files: DefaultAudioFileService()
+			files: DefaultAudioFileService(),
+			toasts: toasts
 		)
 		let player = PlayerViewModel(
 			transport: transport,
@@ -34,7 +44,8 @@ struct loopedApp: App {
 		let library = LibraryViewModel(
 			player: transport,
 			dropped: DefaultDroppedFileService(),
-			store: JSONLibraryStore()
+			store: JSONLibraryStore(),
+			toasts: toasts
 		)
 		// Advance mode: end-of-track → the library picks and plays the next track.
 		// (The mode branching itself lives in PlayerViewModel.trackEnded.)
@@ -52,6 +63,7 @@ struct loopedApp: App {
 		}
 		_player = StateObject(wrappedValue: player)
 		_library = StateObject(wrappedValue: library)
+		_toasts = StateObject(wrappedValue: toasts)
 	}
 
 	var body: some Scene {
@@ -61,6 +73,7 @@ struct loopedApp: App {
 				.environmentObject(player)
 				.environmentObject(library)
 				.environmentObject(waveform)
+				.environmentObject(toasts)
 				.frame(minWidth: 1024, minHeight: 800)
 				.background(Theme.background)
 				.preferredColorScheme(.dark)

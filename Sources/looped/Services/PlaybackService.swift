@@ -42,7 +42,33 @@ protocol PlaybackService: AnyObject {
 	func setVolume(_ volume: Float)
 }
 
+enum PlaybackEngineError: Error, LocalizedError {
+	case startFailed(underlying: Error)
+
+	var errorDescription: String? {
+		switch self {
+		case let .startFailed(underlying):
+			"The audio engine failed to start — playback won't work. (\(underlying.localizedDescription))"
+		}
+	}
+}
+
 final class AVPlaybackService: PlaybackService {
+	/// Reports engine-start failures (init and per-track rewires) to whoever the
+	/// composition root wires in — a broken engine must not fail invisibly. A
+	/// failure from `init` (before the callback can be set) is held and delivered
+	/// on assignment.
+	var onEngineStartFailure: ((PlaybackEngineError) -> Void)? {
+		didSet {
+			if let pending = pendingStartError {
+				pendingStartError = nil
+				onEngineStartFailure?(pending)
+			}
+		}
+	}
+
+	private var pendingStartError: PlaybackEngineError?
+
 	private let engine = AVAudioEngine()
 	private let player = AVAudioPlayerNode()
 	private let timePitch = AVAudioUnitTimePitch()
@@ -85,7 +111,20 @@ final class AVPlaybackService: PlaybackService {
 		engine.attach(eq)
 		engine.attach(limiter)
 		connectGraph(format: nil)
-		do { try engine.start() } catch { print("Engine failed: \(error)") }
+		startEngine()
+	}
+
+	private func startEngine() {
+		do {
+			try engine.start()
+		} catch {
+			let failure = PlaybackEngineError.startFailed(underlying: error)
+			if let onEngineStartFailure {
+				onEngineStartFailure(failure)
+			} else {
+				pendingStartError = failure
+			}
+		}
 	}
 
 	/// `player → timePitch → varispeed → eq → limiter → mainMixer`. All units stay
@@ -117,7 +156,7 @@ final class AVPlaybackService: PlaybackService {
 		engine.stop()
 		connectGraph(format: format)
 		engine.prepare()
-		do { try engine.start() } catch { print("Engine failed: \(error)") }
+		startEngine()
 	}
 
 	// MARK: - Transport
