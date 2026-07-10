@@ -139,6 +139,18 @@ final class PlayerViewModel: ObservableObject {
 		isPlaying ? transport.pause() : transport.play()
 	}
 
+	/// The play button: resumes when paused; when already playing, restarts the
+	/// current material (an armed loop back to A, otherwise the track from 0).
+	func play() {
+		isPlaying ? transport.restart() : transport.play()
+	}
+
+	/// The pause button: pauses at the current time; a no-op while paused.
+	func pause() {
+		guard isPlaying else { return }
+		transport.pause()
+	}
+
 	func stop() {
 		transport.stop()
 	}
@@ -249,6 +261,25 @@ final class PlayerViewModel: ObservableObject {
 
 	func setLoopEnd(time: TimeInterval?) {
 		loopEnd = (time, framePosition(for: time))
+		refreshLoop()
+	}
+
+	/// Keyboard toggle ("A"): set the A point to the current time, or clear it
+	/// when already set (the same semantics as click / right-click).
+	func toggleLoopStart() {
+		setLoopStart(time: loopStart.1 == nil ? currentTime : nil)
+	}
+
+	/// Keyboard toggle ("B") — see `toggleLoopStart`.
+	func toggleLoopEnd() {
+		setLoopEnd(time: loopEnd.1 == nil ? currentTime : nil)
+	}
+
+	/// Clear both loop points ("R" / the panel label's reset), in one pass —
+	/// one disarm, one publish per point.
+	func clearLoopPoints() {
+		loopStart = (nil, nil)
+		loopEnd = (nil, nil)
 		refreshLoop()
 	}
 

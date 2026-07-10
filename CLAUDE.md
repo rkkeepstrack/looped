@@ -122,7 +122,7 @@ One line per file; the *why* behind non-obvious designs lives in the next sectio
 | `Services/WaveformService.swift` | Pure waveform analysis + viewport window math + overview downsampling/mapper. |
 | `Services/LibraryStore.swift` | Library persistence protocol + JSON impl (Application Support). |
 | `Stores/PlaybackCoordinator.swift` | Playback store: source + transport + clock timer; track-ended/source-changed callbacks. |
-| `ViewModels/PlayerViewModel.swift` | Transport projection + loop/rate/pitch/volume intents; `currentParameters` bundle; persisted playthrough mode. |
+| `ViewModels/PlayerViewModel.swift` | Transport projection + split play/pause + loop/rate/pitch/volume intents; `currentParameters` bundle; persisted playthrough mode. |
 | `ViewModels/LibraryViewModel.swift` | Library state/intents; play bridge; next/previous/auto-advance; restore/save + per-track parameter stash. |
 | `ViewModels/WaveformViewModel.swift` | Waveform viewport state; scrub/snap-back. |
 | `ViewModels/ReorderState.swift` | Observable track-list drag state: reorder gap decisions, external drop gap. |
@@ -221,7 +221,7 @@ Two layers, mirroring the source folders:
 - _View-model behavior_ via the doubles in `Support/TestDoubles.swift` (`FakePlaybackService` spy,
   `FakeLibraryStore`, `TooLongAudioFileService`, `SlowAudioFileService` for overlapping-request
   tests, `AudioFixture` temp WAVs): `PlaybackCoordinatorTests` (end-of-track via the exposed
-  `tick()` — no run-loop spinning), `PlayerViewModelTests` (incl. playthrough modes, driven via
+  `tick()` — no run-loop spinning), `PlayerViewModelTests` (incl. split play/pause and playthrough modes, driven via
   the coordinator's `tick()`; ephemeral `UserDefaults` suite per instance),
   `LibraryViewModelTests` (incl. next/previous/auto-advance, restore + parameter stash),
   `WaveformViewModelTests`, `ReorderStateTests` (drag latching, no-op slots, external-gap precedence).

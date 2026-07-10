@@ -107,6 +107,49 @@ final class PlayerViewModelTests {
 		#expect(fake.playCount == 0)
 	}
 
+	@Test func playResumesWhenPausedAndPauseStopsPlayback() async {
+		let vm = await loadedViewModel()
+
+		vm.play()
+		#expect(vm.isPlaying)
+		#expect(fake.playCount == 1)
+
+		vm.pause()
+		#expect(!vm.isPlaying)
+		#expect(fake.pauseCount == 1)
+	}
+
+	@Test func playWhilePlayingRestartsFromTheStart() async {
+		let vm = await loadedViewModel()
+		vm.play()
+		vm.currentTime = 0.6
+
+		vm.play()
+		#expect(vm.isPlaying)
+		#expect(fake.lastSeek == 0)
+		#expect(vm.currentTime == 0)
+		#expect(fake.pauseCount == 0) // restarted, never paused
+	}
+
+	@Test func playWhilePlayingWithAnArmedLoopRestartsAtA() async {
+		let vm = await loadedViewModel()
+		vm.setLoopStart(time: 0.2)
+		vm.setLoopEnd(time: 0.8)
+		vm.play()
+
+		vm.play()
+		#expect(fake.restartLoopCount == 1)
+		#expect(fake.seekCount == 0) // loop restart, not a plain seek
+		#expect(abs(vm.currentTime - 0.2) <= 1e-9)
+		#expect(vm.isPlaying)
+	}
+
+	@Test func pauseWhilePausedIsANoOp() async {
+		let vm = await loadedViewModel()
+		vm.pause()
+		#expect(fake.pauseCount == 0)
+	}
+
 	@Test func stopResetsToStart() async {
 		let vm = await loadedViewModel()
 		vm.togglePlayPause()
@@ -274,6 +317,31 @@ final class PlayerViewModelTests {
 		vm.setLoopStart(time: nil)
 		#expect(!fake.isLooping)
 		#expect(fake.clearLoopCount == 1)
+	}
+
+	// MARK: - Loop point toggles (keyboard a/b/r)
+
+	@Test func toggleSetsThePointAtTheCurrentTimeAndClearsOnRepeat() async {
+		let vm = await loadedViewModel()
+		vm.currentTime = 0.3
+
+		vm.toggleLoopStart()
+		#expect(abs((vm.loopStart.0 ?? -1) - 0.3) <= 1e-9)
+
+		vm.toggleLoopStart()
+		#expect(vm.loopStart.0 == nil)
+	}
+
+	@Test func clearLoopPointsDisarmsAndClearsBoth() async {
+		let vm = await loadedViewModel()
+		vm.setLoopStart(time: 0.2)
+		vm.setLoopEnd(time: 0.8)
+		#expect(fake.isLooping)
+
+		vm.clearLoopPoints()
+		#expect(vm.loopStart.0 == nil)
+		#expect(vm.loopEnd.0 == nil)
+		#expect(!fake.isLooping)
 	}
 
 	// MARK: - Loop nudging
