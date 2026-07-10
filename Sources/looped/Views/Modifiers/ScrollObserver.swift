@@ -43,6 +43,13 @@ private struct ScrollObserverView: NSViewRepresentable {
 		/// Remember the last location while dragging.
 		private var lastDragLocation: CGPoint?
 
+		/// Deferred finger-lift seek, waiting to see whether momentum follows.
+		private var pendingEndTimer: Timer?
+
+		deinit {
+			pendingEndTimer?.invalidate()
+		}
+
 		// MARK: - Initial setup
 
 		override init(frame frameRect: NSRect) {
@@ -59,13 +66,29 @@ private struct ScrollObserverView: NSViewRepresentable {
 		// MARK: - Scrolling (trackpad / wheel)
 
 		override func scrollWheel(with event: NSEvent) {
-			// Update offset with the wheel delta.
-			offsetBinding.wrappedValue += event.scrollingDeltaX
-			onScrollChange?(offsetBinding.wrappedValue)
+			// Zero deltas (a touch that never moves, e.g. stopping a glide) must not
+			// register as scrubbing — the callback latches the scrub state.
+			if event.scrollingDeltaX != 0 {
+				offsetBinding.wrappedValue += event.scrollingDeltaX
+				onScrollChange?(offsetBinding.wrappedValue)
+			}
 
-			// Detect end of momentum‑based scrolling.
-			if event.phase == .ended || event.momentumPhase == .ended {
+			// Trackpad momentum is part of the scrub: the single seek fires when the
+			// glide actually stops, not at finger lift (which double-seeked — once at
+			// lift, once at fade-out). Whether momentum will follow a lift is unknown
+			// at the lift itself, so that seek is deferred a beat and cancelled when
+			// momentum picks the gesture up.
+			if event.momentumPhase == .began {
+				pendingEndTimer?.invalidate()
+				pendingEndTimer = nil
+			} else if event.momentumPhase == .ended || event.momentumPhase == .cancelled {
 				onScrollEnd?()
+			} else if event.phase == .ended || event.phase == .cancelled {
+				let timer = Timer(timeInterval: 0.1, repeats: false) { [weak self] _ in
+					self?.onScrollEnd?()
+				}
+				RunLoop.main.add(timer, forMode: .common)
+				pendingEndTimer = timer
 			}
 		}
 
