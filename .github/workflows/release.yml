@@ -1,0 +1,51 @@
+name: Release
+
+# Push a tag like v1.0.0 and this workflow does the rest: tests, universal
+# build, GitHub release with the zip, and a cask version/sha256 bump on main.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: .build
+          key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      - name: Run tests
+        run: swift test
+
+      - name: Build release zip
+        id: build
+        run: |
+          brew install just
+          VERSION="${GITHUB_REF_NAME#v}"
+          ZIP=$(just release "$VERSION" | head -1)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
+          echo "sha256=$(shasum -a 256 "$ZIP" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" "${{ steps.build.outputs.zip }}" --title "Looped ${{ steps.build.outputs.version }}" --generate-notes
+
+      - name: Bump cask on main
+        run: |
+          git fetch origin main
+          git checkout main
+          sed -i '' -E 's/^  version ".*"/  version "${{ steps.build.outputs.version }}"/' Casks/looped.rb
+          sed -i '' -E 's/^  sha256 ".*"/  sha256 "${{ steps.build.outputs.sha256 }}"/' Casks/looped.rb
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore: cask ${{ steps.build.outputs.version }}"
+          git push origin main

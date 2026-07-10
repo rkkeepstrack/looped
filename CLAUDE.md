@@ -25,6 +25,10 @@ Standard SwiftPM layout, everything under the repo/git root (this file, `Package
 - **`Tests/loopedTests/`** — unit tests (module `loopedTests`), mirroring the source folders.
 - **`plans/`** — remaining-work docs (`README.md` first).
 - **`assets/`** — app icon: `AppIcon.svg` (source of truth) + the generated `AppIcon.icns`.
+- **`docs/`** — the GitHub Pages download site (static `index.html` + icon; served from `main`/`docs`).
+- **`.github/workflows/`** — CI (`ci.yml`: tests on push/PR) + release pipeline (`release.yml`: on `v*` tags).
+- **`Casks/looped.rb`** — Homebrew cask; the app repo doubles as the tap
+  (`brew tap rkkeepstrack/looped https://github.com/rkkeepstrack/looped.git`).
 
 ## Build & Run
 
@@ -38,7 +42,18 @@ just run            # build a .app bundle (inlined in the justfile) and open it 
 just test           # swift test — headless unit tests, no Xcode (pass args: just test --filter Looping)
 just format         # swiftformat .   (just format-check to lint only)
 just clean          # swift package clean + remove .build/Looped.app
+just release 1.0.0  # universal (arm64+x86_64) release zip + sha256 for the cask
 ```
+
+**Distribution** (no Apple Developer account — unsigned/un-notarized, ad-hoc signatures only):
+releasing is automated — `just ship <version>` (checks clean/pushed `main`, tags `v<version>`,
+pushes the tag) kicks off `.github/workflows/release.yml`, which runs the
+tests, builds the universal zip via `just release <version>`, creates the GitHub release, and
+commits the `version`/`sha256` bump to `Casks/looped.rb` on `main` (the cask URL embeds the
+version). `.github/workflows/ci.yml` runs `swift test` on every push/PR (macOS runners are free
+for public repos; SwiftPM `.build` cached on `Package.resolved`). Users install via the Pages
+site (`docs/`) or `brew install --cask --no-quarantine looped` — `--no-quarantine` matters
+because Gatekeeper rejects un-notarized quarantined apps.
 
 `just run` assembles `.build/Looped.app` (an `Info.plist` + the SwiftPM binary + the app icon) and
 `open`s it so it launches as a real foreground app (Dock/menu/focus) — min window 1024×800, set in

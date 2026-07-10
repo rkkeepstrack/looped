@@ -29,15 +29,17 @@ run config="debug":
 # A bare `swift run` starts the binary unbundled (no Dock/menu/focus), so we wrap it
 # in a minimal .app. Build output goes to stderr; only the bundle path hits stdout.
 # Assemble .build/Looped.app around the built binary and print its path (no launch).
-bundle config="debug":
+# `universal=1` builds arm64 + x86_64 (release distribution); default is host-only.
+bundle config="debug" version="1.0.0" universal="":
     #!/usr/bin/env python3
     import plistlib, shutil, subprocess, sys
     from pathlib import Path
     cfg = "{{config}}"
+    arch = ["--arch", "arm64", "--arch", "x86_64"] if "{{universal}}" else []
     # Build; keep swift's chatter on stderr so stdout is only the bundle path.
-    subprocess.run(["swift", "build", "-c", cfg], check=True, stdout=sys.stderr)
+    subprocess.run(["swift", "build", "-c", cfg, *arch], check=True, stdout=sys.stderr)
     bin_dir = subprocess.run(
-        ["swift", "build", "-c", cfg, "--show-bin-path"],
+        ["swift", "build", "-c", cfg, *arch, "--show-bin-path"],
         check=True, capture_output=True, text=True,
     ).stdout.strip()
     app = Path(".build/Looped.app")
@@ -58,8 +60,8 @@ bundle config="debug":
         "CFBundleInfoDictionaryVersion": "6.0",
         "CFBundleName": "Looped",
         "CFBundlePackageType": "APPL",
-        "CFBundleShortVersionString": "1.0",
-        "CFBundleVersion": "1",
+        "CFBundleShortVersionString": "{{version}}",
+        "CFBundleVersion": "{{version}}",
         "LSMinimumSystemVersion": "15.6",
         "NSHighResolutionCapable": True,
         "NSPrincipalClass": "NSApplication",
@@ -68,6 +70,31 @@ bundle config="debug":
         plistlib.dump(info, f)
     (app / "Contents/PkgInfo").write_text("APPL????")
     print(app)
+
+# Release a new version end-to-end: verify a clean, pushed main, then tag
+# v<version> and push the tag — the release.yml pipeline does the rest
+# (tests, universal zip, GitHub release, cask bump on main).
+ship version:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    [[ "$(git branch --show-current)" == "main" ]] || { echo "not on main" >&2; exit 1; }
+    git diff-index --quiet HEAD || { echo "working tree not clean" >&2; exit 1; }
+    git push origin main
+    git tag "v{{version}}"
+    git push origin "v{{version}}"
+    echo "tagged v{{version}} — release pipeline running: https://github.com/rkkeepstrack/looped/actions"
+
+# Build a universal release zip for GitHub Releases and print its sha256
+# (paste into Casks/looped.rb). Output: .build/Looped-<version>.zip
+release version="1.0.0":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    app=$(just bundle release {{version}} 1)
+    zip=".build/Looped-{{version}}.zip"
+    rm -f "$zip"
+    ditto -c -k --keepParent "$app" "$zip"
+    echo "$zip"
+    shasum -a 256 "$zip"
 
 # Regenerate assets/AppIcon.icns from assets/AppIcon.svg (needs librsvg; iconutil
 # ships with macOS). The .icns is checked in, so this only runs after icon edits.
