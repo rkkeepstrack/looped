@@ -61,6 +61,17 @@ struct ReorderStateTests {
 		#expect(state.activeGapIndex(rowHeight: h, count: 5) == 4)
 	}
 
+	@Test func externalDragHoveringTracksTheExternalGap() {
+		let state = ReorderState()
+		#expect(!state.isExternalDragHovering)
+
+		state.externalGapIndex = 0
+		#expect(state.isExternalDragHovering)
+
+		state.externalGapIndex = nil // drop or drag-exit
+		#expect(!state.isExternalDragHovering)
+	}
+
 	@Test func activeGapIsNilWhenIdle() {
 		#expect(ReorderState().activeGapIndex(rowHeight: h, count: 5) == nil)
 	}

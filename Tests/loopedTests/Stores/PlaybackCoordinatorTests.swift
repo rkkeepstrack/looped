@@ -86,6 +86,33 @@ final class PlaybackCoordinatorTests {
 		#expect(transport.currentTime == 0)
 	}
 
+	@Test func unloadStopsAndClearsTheSource() async {
+		let transport = await loadedCoordinator()
+		var sourceChanges = 0
+		transport.onSourceChanged = { sourceChanges += 1 }
+		transport.play()
+
+		transport.unload()
+
+		#expect(!transport.isPlaying)
+		#expect(transport.currentURL == nil)
+		#expect(transport.duration == nil)
+		#expect(transport.currentTime == 0)
+		#expect(fake.stopCount == 1)
+		#expect(sourceChanges == 1)
+	}
+
+	@Test func unloadWithoutASourceIsANoOp() {
+		let transport = PlaybackCoordinator(playback: fake, files: DefaultAudioFileService())
+		var sourceChanges = 0
+		transport.onSourceChanged = { sourceChanges += 1 }
+
+		transport.unload()
+
+		#expect(fake.stopCount == 0)
+		#expect(sourceChanges == 0)
+	}
+
 	@Test func loadReturnsSuccess() async {
 		let transport = PlaybackCoordinator(playback: fake, files: DefaultAudioFileService())
 		#expect(await transport.load(url: fixture))

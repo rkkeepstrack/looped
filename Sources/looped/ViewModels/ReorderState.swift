@@ -20,6 +20,11 @@ final class ReorderState: ObservableObject {
 		draggedIndex != nil
 	}
 
+	/// Drives the track list's drop-hint fade.
+	var isExternalDragHovering: Bool {
+		externalGapIndex != nil
+	}
+
 	func dragChanged(index: Int, translation: CGFloat) {
 		if draggedIndex == nil { draggedIndex = index }
 		dragTranslation = translation

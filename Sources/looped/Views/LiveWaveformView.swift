@@ -87,9 +87,7 @@ struct LiveWaveformView: View {
 					}
 				}
 			} else {
-				Text("No audio file loaded")
-					.foregroundStyle(Theme.textSecondary)
-					.frame(maxWidth: .infinity, minHeight: 120)
+				EmptyStateView(error: audioPlayer.loadError)
 			}
 
 			// Decode-in-flight spinner (double-clicking a library track).

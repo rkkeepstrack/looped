@@ -12,30 +12,52 @@ import SwiftUI
 
 struct TrackListView: View {
 	@EnvironmentObject var library: LibraryViewModel
-	/// Single-click selection — purely visual until a double-click loads.
-	@State private var selectedTrackID: UUID?
 	@StateObject private var reorder = ReorderState()
 
+	/// Below this much free space the drop hint stays hidden — the insertion
+	/// line alone carries the feedback.
+	private let minDropHintHeight: CGFloat = 60
+	/// Headroom above gap 0 for its insertion indicator.
+	private let topInset: CGFloat = 4
+
 	var body: some View {
-		ScrollView {
-			// Non-lazy so zIndex can lift the dragged row; the library is small.
-			VStack(spacing: 0) {
-				ForEach(Array(library.tracks.enumerated()), id: \.element.id) { index, track in
-					trackRow(track, at: index)
+		GeometryReader { geo in
+			ScrollView {
+				// Non-lazy so zIndex can lift the dragged row; the library is small.
+				VStack(spacing: 0) {
+					ForEach(Array(library.tracks.enumerated()), id: \.element.id) { index, track in
+						trackRow(track, at: index)
+					}
+					// Tail area so a drop can land below the last row (gap = count).
+					Color.clear.frame(height: Theme.trackRowHeight * 2)
 				}
-				// Tail area so a drop can land below the last row (gap = count).
-				Color.clear.frame(height: Theme.trackRowHeight * 2)
+				// Fill the viewport so the whole column below the rows is a drop
+				// target (a drop past the tail clamps to gap = count → append).
+				.frame(minHeight: max(0, geo.size.height - topInset), alignment: .top)
+				.overlay(alignment: .top) { insertionLine }
+				.overlay(alignment: .bottom) { dropHint(viewportHeight: geo.size.height) }
+				// On the content, not the ScrollView: DropInfo.location must stay
+				// in row coordinates when scrolled.
+				.onDrop(
+					of: [.fileURL],
+					delegate: TrackListDropDelegate(library: library, gapIndex: $reorder.externalGapIndex)
+				)
+				// Outside the drop/overlay so gap coordinates are unaffected.
+				.padding(.top, topInset)
 			}
-			.overlay(alignment: .top) { insertionLine }
-			// On the content, not the ScrollView: DropInfo.location must stay
-			// in row coordinates when scrolled.
-			.onDrop(
-				of: [.fileURL],
-				delegate: TrackListDropDelegate(library: library, gapIndex: $reorder.externalGapIndex)
-			)
-			// Headroom for the gap-0 indicator; outside the drop/overlay so gap
-			// coordinates are unaffected.
-			.padding(.top, 4)
+		}
+	}
+
+	/// "Drop audio files or folders here", faded in while an external drag
+	/// hovers the list.
+	@ViewBuilder private func dropHint(viewportHeight: CGFloat) -> some View {
+		let free = viewportHeight - topInset - CGFloat(library.tracks.count + 2) * Theme.trackRowHeight
+		if free >= minDropHintHeight {
+			DropHintLabel()
+				.frame(height: free)
+				.opacity(reorder.isExternalDragHovering ? 1 : 0)
+				.animation(.linear(duration: 0.15), value: reorder.isExternalDragHovering)
+				.allowsHitTesting(false)
 		}
 	}
 
@@ -43,13 +65,13 @@ struct TrackListView: View {
 		TrackRow(
 			track: track,
 			isCurrent: track.id == library.currentTrackID,
-			isSelected: track.id == selectedTrackID
+			isSelected: track.id == library.selectedTrackID
 		)
 		.frame(height: Theme.trackRowHeight)
 		.offset(y: index == reorder.draggedIndex ? reorder.dragTranslation : 0)
 		.zIndex(index == reorder.draggedIndex ? 1 : 0)
 		.opacity(index == reorder.draggedIndex ? 0.8 : 1)
-		.onTapGesture { selectedTrackID = track.id }
+		.onTapGesture { library.selectedTrackID = track.id }
 		.simultaneousGesture(
 			TapGesture(count: 2)
 				.onEnded { Task { await library.load(track) } }
@@ -62,7 +84,7 @@ struct TrackListView: View {
 	private func reorderGesture(for index: Int, track: Track) -> some Gesture {
 		DragGesture(minimumDistance: 2)
 			.onChanged { value in
-				if !reorder.isDragging { selectedTrackID = track.id }
+				if !reorder.isDragging { library.selectedTrackID = track.id }
 				reorder.dragChanged(index: index, translation: value.translation.height)
 			}
 			.onEnded { value in

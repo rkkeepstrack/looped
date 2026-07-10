@@ -214,6 +214,99 @@ struct LibraryViewModelTests {
 		#expect(!player.isLoadingTrack)
 	}
 
+	// MARK: - Remove
+
+	@Test func removeDropsTheRowAndMovesSelectionToTheNextNeighbor() async throws {
+		let (library, _, _) = try await loadedSUT(count: 3)
+		let removed = library.tracks[1]
+		library.selectedTrackID = removed.id
+
+		library.remove(id: removed.id)
+
+		#expect(library.tracks.count == 2)
+		#expect(!library.tracks.contains(removed))
+		#expect(library.selectedTrackID == library.tracks[1].id) // the old index, now the next row
+	}
+
+	@Test func removingTheLastRowSelectsTheNewLastRow() async throws {
+		let (library, _, _) = try await loadedSUT(count: 2)
+		library.selectedTrackID = library.tracks[1].id
+
+		library.remove(id: library.tracks[1].id)
+
+		#expect(library.selectedTrackID == library.tracks[0].id)
+	}
+
+	@Test func removingTheCurrentTrackUnloadsAndStopsPlayback() async throws {
+		let (library, player, playback) = try await loadedSUT(count: 2)
+		player.play()
+		let current = try #require(library.tracks.first(where: { $0.id == library.currentTrackID }))
+
+		library.remove(id: current.id)
+
+		#expect(library.currentTrackID == nil)
+		#expect(player.currentURL == nil)
+		#expect(!player.isPlaying)
+		#expect(playback.stopCount == 1)
+	}
+
+	@Test func removingANonCurrentTrackKeepsPlayback() async throws {
+		let (library, player, playback) = try await loadedSUT(count: 2)
+		player.play()
+
+		library.remove(id: library.tracks[1].id)
+
+		#expect(library.currentTrackID == library.tracks[0].id)
+		#expect(player.isPlaying)
+		#expect(playback.stopCount == 0)
+	}
+
+	@Test func removingTheOnlyTrackClearsTheSelection() async throws {
+		let (library, _, _) = try await loadedSUT(count: 1)
+		library.selectedTrackID = library.tracks[0].id
+
+		library.remove(id: library.tracks[0].id)
+
+		#expect(library.tracks.isEmpty)
+		#expect(library.selectedTrackID == nil)
+	}
+
+	@Test func removeSelectedWithoutASelectionIsANoOp() async throws {
+		let (library, _, _) = try await loadedSUT(count: 2)
+
+		library.removeSelected()
+
+		#expect(library.tracks.count == 2)
+	}
+
+	@Test func removingATrackWhileItsLoadIsInFlightDoesNotResurrectIt() async throws {
+		// ⌫ during the decode of a double-clicked row: the finishing load must
+		// not mark the removed track current (or leave its source playing).
+		let (library, player, _) = makeSUT(files: SlowAudioFileService(delay: .milliseconds(80)))
+		try await library.add(urls: [AudioFixture.tempSine(seconds: 1)])
+		let track = try #require(library.tracks.first)
+
+		let load = Task { await library.load(track) }
+		try await Task.sleep(for: .milliseconds(20))
+		library.remove(id: track.id)
+		await load.value
+
+		#expect(library.currentTrackID == nil)
+		#expect(player.currentURL == nil)
+	}
+
+	@Test func removePersistsTheLibrary() async throws {
+		let store = FakeLibraryStore()
+		let (library, _, _) = makeSUT(store: store)
+		let a = try AudioFixture.tempSine(seconds: 1)
+		let b = try AudioFixture.tempSine(seconds: 1)
+		await library.add(urls: [a, b])
+
+		try library.remove(id: #require(library.tracks.first).id)
+
+		#expect(store.saved?.tracks.map(\.url) == [b])
+	}
+
 	// MARK: - Next / previous
 
 	@Test func nextMovesToTheFollowingTrackWithoutPlaying() async throws {

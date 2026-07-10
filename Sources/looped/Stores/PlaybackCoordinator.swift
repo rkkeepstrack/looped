@@ -90,6 +90,21 @@ final class PlaybackCoordinator: ObservableObject {
 		onSourceChanged?()
 	}
 
+	/// Drop the current source (the loaded track was removed from the library).
+	/// Fires `onSourceChanged` so dependents reset per-track state (loop points).
+	func unload() {
+		loadError = nil // clear a stale error even when the failed load left no source
+		guard loaded != nil else { return }
+		playback.stop()
+		loaded = nil
+		currentURL = nil
+		duration = nil
+		currentTime = 0
+		isPlaying = false
+		stopTimer()
+		onSourceChanged?()
+	}
+
 	// MARK: - Transport
 
 	func play() {
