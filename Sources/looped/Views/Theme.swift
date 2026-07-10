@@ -68,6 +68,8 @@ enum Theme {
 	static let insertionLine = textPrimary.opacity(0.6)
 	static let panelCorner: CGFloat = 12
 	static let panelBorder = Color.white.opacity(0.08)
+	/// Background wash for hovered borderless buttons (`hoverHighlight()`).
+	static let hoverWash = Color.white.opacity(0.12)
 
 	// MARK: Animation
 

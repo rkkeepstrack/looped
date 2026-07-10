@@ -137,7 +137,10 @@ One line per file; the *why* behind non-obvious designs lives in the next sectio
 | `Views/SyncWaveformCanvas.swift` | Synchronous DSWaveformImage canvas shared by the main waveform and the minimap. |
 | `Views/Theme.swift` | Design tokens: palette, waveform colors, layout metrics. |
 | `Views/ScrollObserverView.swift` | `NSViewRepresentable`: scroll-wheel + mouse-drag capture → `WaveformViewModel`. |
+| `Views/Modifiers/HoverEffects.swift` | Button hover feedback: `hoverHighlight()` wash (borderless), `hoverBrightness()` (bordered). |
+| `Views/Modifiers/RightClick.swift` | `onRightClick` modifier: AppKit overlay claiming only right-button events (clears single loop points). |
 | `Views/Modifiers/KeyboardShortcuts.swift` | `keyboardShortcuts` modifier: key monitor; space play/pause, tab sidebar, a/b/r loop points; ignores modal panels. |
+| `Views/Modifiers/HoverActionLabel.swift` | Shared caption label that turns into an action ("Reset") on hover — slider labels + loop panel title. |
 | `Utils/TimeFormatter.swift` | `m:ss` time formatting. |
 | `Utils/RowInsertion.swift` | Pure gap-index math for list reorder/drop (gap N = space above row N; matches `Array.move` offsets). |
 | `Utils/TrackNavigation.swift` | Pure library-transport policy: next/previous move decisions, 3 s restart rule. |
@@ -233,7 +236,10 @@ device/eyes/ears — see **`TESTING.md`** (repo root) for the manual QA checklis
 ## Conventions
 
 - SwiftUI-first; drop to AppKit (`NSViewRepresentable`) only where SwiftUI can't (scroll/keyboard
-  capture).
+  capture). Such plumbing — and shared view modifiers/micro-components — lives in
+  **`Views/Modifiers/`** behind a `View`-extension entry point (`keyboardShortcuts`,
+  `observeScrolling`, `onRightClick`, the hover effects); the representable itself stays
+  `private`, so callers never see AppKit.
 - **Layering**: `View → ViewModel → Store → Service`. Views hold no logic; view-models hold
   `@Published` state + intents; stores are UI-free observables shared across view-models; services
   are plain (no SwiftUI) and sit behind protocols. Keep UI-agnostic code out of views and
