@@ -5,9 +5,6 @@ Build/run/test and architecture live in the repo-root `CLAUDE.md`.
 
 Ordered, reviewable slices:
 
-- **[09-error-toasts.md](09-error-toasts.md)** — general error handling: themed toasts,
-  meaningful messages, per-action aggregation, no silent failures. ⬜ (best last-ish —
-  touches most layers)
 - **[10-native-menu.md](10-native-menu.md)** — menu bar overhaul: File → library actions
   (import files/folder, remove selected), full Playback menu with shortcuts +
   rate/pitch/volume/sync, new Loop menu, Edit menu removed. ⬜ (independent)
@@ -34,4 +31,7 @@ values — restored on launch; playthrough mode in `UserDefaults`) · controls r
 icon, sidebar import-folder button, native menu bar with File ▸ Open… ⌘O + Playback menu) ·
 library QoL (08: ⌫/⌦ removes the selected track — removing the loaded one unloads via
 `PlaybackCoordinator.unload()` into an `EmptyStateView` placeholder; drops below the list
-append; animated drop hint while dragging over the library).
+append; animated drop hint while dragging over the library) · error toasts (09:
+`ToastCenter` store + bottom-trailing `ToastStackView`, per-cause `LocalizedError`
+messages naming the file, one aggregated toast per import/drop action, engine-start
+failures surfaced, header error text removed).

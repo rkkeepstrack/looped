@@ -23,13 +23,14 @@ XCTest — that's what lets it run on the CLT alone. Two layers:
 |---|---|
 | `WaveformServiceTests` | window width/offset/playheadX, bucket alignment, silence padding, sample copy, playhead clamp, `chunkX` inverse. |
 | `LoopingServiceTests` | slice length, seam continuity (`out[0] == source[end]`), untouched tail, no-fade at song end, invalid-range → `nil`, out-of-bounds clamping. |
-| `AudioFileServiceTests` | 20-minute limit boundary (pure `exceedsDurationLimit`), error messages, happy-path decode of a generated WAV. |
+| `AudioFileServiceTests` | 20-minute limit boundary (pure `exceedsDurationLimit`), error messages (naming the file), happy-path decode of a generated WAV. |
 
 **View-models** — behavior via injected test doubles (`Support/TestDoubles.swift`):
 
 | File | Covers |
 |---|---|
-| `PlayerViewModelTests` | load populates state / rejects > 20 min; play-pause; stop resets; `jumpTo` seeks in-bounds, ignores out-of-bounds, no-ops while looping; A/B arms/disarms the loop; rate/volume reach the player. |
+| `ToastCenterTests` | toast queue: report stacks, empty reports are no-ops, error → message mapping, manual + auto dismiss. |
+| `PlayerViewModelTests` | load populates state / rejects > 20 min (failure → toast); play-pause; stop resets; `jumpTo` seeks in-bounds, ignores out-of-bounds, no-ops while looping; A/B arms/disarms the loop; rate/volume reach the player. |
 | `WaveformViewModelTests` | scroll-offset → center-time shift; scrub end/immediate-snap state; window delegates to `WaveformService`. |
 
 Not automated: the real **`AVPlaybackService`** engine graph (needs an audio device) and
@@ -43,7 +44,16 @@ real track (WAV/MP3/AIFF) a couple of minutes long. Launch with `just run`.
 **Load**
 - [ ] Header **Load** (and the sidebar Open File button) opens the picker; a
       WAV/MP3/AIFF loads, name + `currentTime / fileTime` show, waveform renders.
-- [ ] Loading a **> 20 min** file shows the "longer than 20 minutes" error, not a crash. **[auto]**
+- [ ] Loading a **> 20 min** file shows a toast naming the file ("… is longer than
+      20 minutes"), not a crash; the header shows no error text. **[auto: message]**
+
+**Error toasts** (look/timing are manual — the queue logic is **[auto]**)
+- [ ] A toast slides/fades in bottom-right above the controls bar, auto-dismisses
+      after ~4 s, and dismisses immediately on click.
+- [ ] Importing/dropping a mix of good and bad files adds the good ones and shows
+      **one** toast listing every skipped file; re-adding an existing track stays silent.
+- [ ] Dropping an empty folder (or only unsupported files) says nothing was usable.
+- [ ] Several failing actions in a row stack toasts; they don't replace each other.
 
 **Transport**
 - [ ] Play/pause toggles (button **and** spacebar); the playhead advances. **[auto: state]**
