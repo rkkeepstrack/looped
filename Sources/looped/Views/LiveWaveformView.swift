@@ -26,16 +26,18 @@ struct LiveWaveformView: View {
 		ZStack {
 			if let url = audioPlayer.audioURL {
 				GeometryReader { geo in
-					// `.animation` re-evaluates per display frame while playing, so the pan
-					// advances with the display clock instead of the coarser 0.03 s state
-					// timer (whose beat against the refresh rate made the scroll judder).
+					// `.animation` re-evaluates per display frame while playing, so the
+					// window (and the whole-stripe steps of the pan) tracks the display
+					// clock instead of the coarser 0.03 s state timer (whose beat against
+					// the refresh rate made the motion judder).
 					TimelineView(.animation(minimumInterval: nil, paused: !audioPlayer.isPlaying)) { _ in
 						let width = geo.size.width
 						let height = geo.size.height
 						let waveHeight = max(0, height - 2 * verticalInset)
 						let time = audioPlayer.livePlaybackTime()
-						// A bucket-aligned chunk around the playhead — translated smoothly
-						// via `offset`, so only a viewport-sized slice is ever drawn.
+						// A bucket-aligned chunk around the playhead, translated via the
+						// pitch-quantized `offset` (screen-fixed stripes — see
+						// `WaveformService.window`), so only a viewport-sized slice is drawn.
 						let win = offsetCalculator.window(playbackTime: time)
 
 						ZStack {
@@ -53,14 +55,15 @@ struct LiveWaveformView: View {
 									.frame(width: win.width, height: waveHeight)
 									.mask(alignment: .leading) { Rectangle().frame(width: win.playheadX) }
 
-								// Scrub highlight (bug-fixes.md #1): while scrubbing, tint the span
-								// between the played edge and the scrub cursor (the viewport center)
-								// light blue — over the upcoming gray when scrubbing forward, over
-								// the played orange when scrubbing backwards. Fades out naturally as
-								// the snap-back shrinks the span to zero.
+								// Scrub highlight: while scrubbing, tint the span between the played
+								// edge and the scrub cursor (the viewport center) light blue — over
+								// the upcoming gray when scrubbing forward, over the played orange
+								// when scrubbing backwards. Fades out naturally as the snap-back
+								// shrinks the span to zero. The cursor gets the pan residue so it
+								// stays screen-smooth like the played edge.
 								if offsetCalculator.isScrolling {
 									let centerTime = offsetCalculator.centerTime(playbackTime: time)
-									let centerX = offsetCalculator.chunkX(forTime: centerTime, chunkStartSample: win.chunkStartSample)
+									let centerX = offsetCalculator.chunkX(forTime: centerTime, chunkStartSample: win.chunkStartSample) + win.panResidue
 									let lower = min(win.playheadX, centerX)
 									let upper = max(win.playheadX, centerX)
 									SyncWaveformCanvas(samples: win.samples, configuration: configuration(color: Theme.waveformScrub))

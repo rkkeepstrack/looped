@@ -27,20 +27,32 @@ struct WaveformLayout {
 		pixelsPerSecond * sampleScale
 	}
 
-	/// One stripe occupies this many samples (`(width + spacing) × scale`).
+	/// One stripe pitch in points.
+	var stripePitch: CGFloat {
+		barWidth + barSpacing
+	}
+
+	/// One stripe occupies this many samples (`(width + spacing) × scale`). The
+	/// product must be integral: the pitch-quantized window offset cancels the
+	/// bucket-stepped chunk start only when `stripeBucket == stripePitch × scale`
+	/// exactly — otherwise the content drifts against the screen-fixed stripes.
 	var stripeBucket: Int {
-		max(1, Int((barWidth + barSpacing) * sampleScale))
+		max(1, Int(stripePitch * sampleScale))
 	}
 }
 
-/// A rendered slice: the chunk samples, its width, the offset that positions it
-/// under the fixed center iterator, and the playhead's x within the chunk.
+/// A rendered slice: the chunk samples, its width, the pitch-quantized offset that
+/// positions it on screen, and the played-edge x within the chunk. `playheadX`
+/// carries the sub-pitch pan the quantized offset dropped, so the played edge still
+/// glides smoothly under the fixed center iterator instead of sawtoothing with the
+/// stepped chunk; `panResidue` exposes that leftover for other screen-smooth cursors.
 struct WaveformWindow {
 	var samples: [Float]
 	var width: CGFloat
 	var offset: CGFloat
 	var playheadX: CGFloat
 	var chunkStartSample: Double
+	var panResidue: CGFloat
 }
 
 /// Pure song-time ↔ strip-pixel mapping for the full-track overview (minimap).
@@ -78,7 +90,9 @@ protocol WaveformService: Sendable {
 	func analyze(url: URL, duration: TimeInterval, noiseFloor: Float, samplesPerSecond: CGFloat) async -> [Float]
 
 	/// The bucket-aligned window around `centerTime`. Recomputed each frame; the
-	/// bucket snapping + `offset` keep the motion smooth and the peaks stable.
+	/// bucket snapping keeps the peaks stable, and the pitch-quantized `offset`
+	/// keeps the stripes screen-fixed (content flows through them in whole-stripe
+	/// steps — a fractional pan strobes the stripe pattern).
 	func window(samples: [Float], layout: WaveformLayout, centerTime: TimeInterval, playbackTime: TimeInterval) -> WaveformWindow
 
 	/// x of a song time within a chunk (for loop markers/region).
@@ -107,21 +121,33 @@ struct DefaultWaveformService: WaveformService {
 	func window(samples: [Float], layout: WaveformLayout, centerTime: TimeInterval, playbackTime: TimeInterval) -> WaveformWindow {
 		let bucket = layout.stripeBucket
 		let viewportSamples = max(1, Int(layout.viewportWidth * layout.sampleScale))
-		let chunkCount = viewportSamples + 2 * bucket // slack for the translate
+		// Slack for the translate: the snap-down of the chunk start can eat up to a
+		// full pitch of one margin and the offset quantization another half pitch
+		// either side — up to 1.5 pitches per side, rounded up to 2 buckets each
+		// (the sweep test pins the no-blank-edge bound).
+		let chunkCount = viewportSamples + 4 * bucket
 		let width = CGFloat(chunkCount) / layout.sampleScale
 
 		let centerSample = centerTime * Double(layout.sampleRate)
 		let idealStart = centerSample - Double(chunkCount) / 2
-		// Snap the chunk start down to a whole stripe bucket.
 		let chunkStart = Int((idealStart / Double(bucket)).rounded(.down)) * bucket
 
 		// Center is placed at the viewport centre; the chunk is centered in the outer
 		// stack (leading at (viewportWidth - width)/2), so offset shifts it from there.
 		let centerLocalX = CGFloat(centerSample - Double(chunkStart)) / layout.sampleScale
-		let offset = (layout.viewportWidth / 2 - centerLocalX) - (layout.viewportWidth - width) / 2
+		let exactOffset = (layout.viewportWidth / 2 - centerLocalX) - (layout.viewportWidth - width) / 2
+		// Quantize the translate to whole stripe pitches: the stripes stay glued to
+		// fixed screen positions (heights flow, bars don't slide). A smooth fractional
+		// pan strobes — ~1.7 px/frame across a 4 px stripe pattern flips the pattern
+		// phase ~150° per frame, so the whole waveform shimmers (bug-fixes.md #1).
+		let offset = (exactOffset / layout.stripePitch).rounded() * layout.stripePitch
+		// The sub-pitch pan the quantization dropped: added back to the time cursors
+		// (played edge, scrub cursor) so they stay screen-smooth — without it the
+		// played edge sawtooths ±half a pitch around the fixed center iterator.
+		let panResidue = exactOffset - offset
 
 		let playSample = playbackTime * Double(layout.sampleRate)
-		let playheadX = CGFloat(playSample - Double(chunkStart)) / layout.sampleScale
+		let playheadX = CGFloat(playSample - Double(chunkStart)) / layout.sampleScale + panResidue
 
 		var window = [Float](repeating: 1, count: chunkCount) // 1 == silence
 		if !samples.isEmpty {
@@ -136,7 +162,8 @@ struct DefaultWaveformService: WaveformService {
 			width: width,
 			offset: offset,
 			playheadX: min(max(0, playheadX), width),
-			chunkStartSample: Double(chunkStart)
+			chunkStartSample: Double(chunkStart),
+			panResidue: panResidue
 		)
 	}
 

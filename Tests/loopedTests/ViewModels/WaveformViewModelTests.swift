@@ -150,8 +150,8 @@ struct WaveformViewModelTests {
 		let vm = makeViewModel()
 		// No samples analyzed yet → silence window, but the geometry is the service's.
 		let win = vm.window(playbackTime: 1.0)
-		#expect(win.width == 108)
-		#expect(win.chunkStartSample == 88)
-		#expect(win.samples.count == 216)
+		#expect(win.width == 116)
+		#expect(win.chunkStartSample == 80)
+		#expect(win.samples.count == 232)
 	}
 }

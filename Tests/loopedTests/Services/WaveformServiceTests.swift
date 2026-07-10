@@ -18,26 +18,54 @@ struct WaveformServiceTests {
 	/// Derived constants (so the expectations below aren't magic numbers):
 	///   sampleRate    = 100 * 2                = 200 samples/s
 	///   stripeBucket  = Int((2 + 2) * 2)       = 8 samples
+	///   stripePitch   = 2 + 2                  = 4 pt
 	///   viewportSamps = Int(100 * 2)           = 200
-	///   chunkCount    = 200 + 2*8              = 216
-	///   width         = 216 / 2               = 108 pt
+	///   chunkCount    = 200 + 4*8              = 232
+	///   width         = 232 / 2               = 116 pt
 	private var layout: WaveformLayout {
 		WaveformLayout(viewportWidth: 100, pixelsPerSecond: 100, sampleScale: 2, barWidth: 2, barSpacing: 2)
 	}
 
 	@Test func layoutDerivedConstants() {
 		#expect(layout.sampleRate == 200)
+		#expect(layout.stripePitch == 4)
 		#expect(layout.stripeBucket == 8)
 	}
 
 	@Test func windowGeometryAtOneSecond() {
 		let win = service.window(samples: [], layout: layout, centerTime: 1.0, playbackTime: 1.0)
 
-		#expect(win.width == 108)
-		#expect(win.offset == -2)
-		#expect(win.playheadX == 56)
-		#expect(win.chunkStartSample == 88)
-		#expect(win.samples.count == 216)
+		#expect(win.width == 116)
+		// Exact offset is -2; quantized to the nearest whole stripe pitch (4 pt),
+		// leaving a +2 residue that keeps the time cursors screen-smooth.
+		#expect(win.offset == -4)
+		#expect(win.panResidue == 2)
+		#expect(win.playheadX == 62) // (200 - 80)/2 + residue
+		#expect(win.chunkStartSample == 80)
+		#expect(win.samples.count == 232)
+	}
+
+	@Test func offsetIsQuantizedToStripePitchSoStripesStayScreenFixed() {
+		// Sweep the center time in sub-stripe steps: the offset must always be a
+		// whole number of stripe pitches (screen-fixed bars), and the quantization
+		// must never push the visible viewport outside the chunk.
+		for step in 0 ..< 200 {
+			let center = 1.0 + Double(step) * 0.003
+			let win = service.window(samples: [], layout: layout, centerTime: center, playbackTime: center)
+			#expect(win.offset.truncatingRemainder(dividingBy: layout.stripePitch) == 0,
+			        "offset \(win.offset) not pitch-aligned at center \(center)")
+			// Viewport [0, 100] in chunk coordinates: leading edge of the chunk sits
+			// at (viewportWidth - width)/2 + offset on screen.
+			let chunkLeadingOnScreen = (layout.viewportWidth - win.width) / 2 + win.offset
+			#expect(chunkLeadingOnScreen <= 0, "blank left edge at center \(center)")
+			#expect(chunkLeadingOnScreen + win.width >= layout.viewportWidth,
+			        "blank right edge at center \(center)")
+			// With playback at the center, the residue-adjusted played edge must sit
+			// exactly under the fixed center iterator — no sawtooth against the
+			// stepped chunk.
+			#expect(abs(chunkLeadingOnScreen + win.playheadX - layout.viewportWidth / 2) < 1e-9,
+			        "played edge off the iterator at center \(center)")
+		}
 	}
 
 	@Test func emptySamplesAreAllSilence() {
@@ -60,28 +88,28 @@ struct WaveformServiceTests {
 		// negative — the out-of-range head is silence-padded, width is unchanged.
 		#expect(win.chunkStartSample < 0)
 		#expect(Int(win.chunkStartSample) % layout.stripeBucket == 0)
-		#expect(win.width == 108)
+		#expect(win.width == 116)
 	}
 
 	@Test func samplesAreCopiedAndSilencePaddedPastTheEnd() {
-		// chunkStart = 88, chunkCount = 216 → reads samples[88 ..< 304].
+		// chunkStart = 80, chunkCount = 232 → reads samples[80 ..< 312].
 		let samples = (0 ..< 300).map(Float.init)
 		let win = service.window(samples: samples, layout: layout, centerTime: 1.0, playbackTime: 1.0)
 
-		#expect(win.samples.count == 216)
-		#expect(win.samples[0] == 88) // samples[88]
-		#expect(win.samples[211] == 299) // samples[299] (last in range)
-		#expect(win.samples[212] == 1.0) // idx 300 → silence
-		#expect(win.samples[215] == 1.0) // idx 303 → silence
+		#expect(win.samples.count == 232)
+		#expect(win.samples[0] == 80) // samples[80]
+		#expect(win.samples[219] == 299) // samples[299] (last in range)
+		#expect(win.samples[220] == 1.0) // idx 300 → silence
+		#expect(win.samples[231] == 1.0) // idx 311 → silence
 	}
 
 	@Test func playheadIsClampedToTheChunk() {
-		// Center held at 1.0 (chunkStart 88); playhead far behind / ahead of it.
+		// Center held at 1.0 (chunkStart 80); playhead far behind / ahead of it.
 		let behind = service.window(samples: [], layout: layout, centerTime: 1.0, playbackTime: 0.0)
-		#expect(behind.playheadX == 0) // (0 - 88)/2 = -44 → clamped to 0
+		#expect(behind.playheadX == 0) // (0 - 80)/2 + 2 = -38 → clamped to 0
 
 		let ahead = service.window(samples: [], layout: layout, centerTime: 1.0, playbackTime: 10.0)
-		#expect(ahead.playheadX == 108) // (2000 - 88)/2 = 956 → clamped to width
+		#expect(ahead.playheadX == 116) // (2000 - 80)/2 + 2 = 962 → clamped to width
 	}
 
 	// MARK: - Peak morph
