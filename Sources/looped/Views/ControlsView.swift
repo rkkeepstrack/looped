@@ -12,10 +12,6 @@ struct ControlsView: View {
 	@EnvironmentObject var library: LibraryViewModel
 	@EnvironmentObject var offsetCalculator: WaveformViewModel
 
-	@State private var ratePosition: Double = 0.5 // normalized 0…1 (0.5 → 1.0×)
-	@State private var pitchSemitones: Double = 0 // −12…+12, snapped to integers
-	@State private var volume: Double = 1.0
-
 	var body: some View {
 		// Sliders pinned left, loop panel pinned right, transport centered over the
 		// content column (independent of the side elements' widths) — so it stays
@@ -35,22 +31,19 @@ struct ControlsView: View {
 
 	private var sliders: some View {
 		VStack(spacing: 10) {
-			CompactSlider(label: "Volume", value: $volume, defaultValue: 1.0, format: { v in
+			CompactSlider(label: "Volume", value: volumeBinding, defaultValue: 1.0, format: { v in
 				"\(Int((v * 100).rounded())) %"
-			}) { v in
-				audioPlayer.updateVolume(volume: Float(v))
+			}) { _ in
+				audioPlayer.updateVolume()
 			}
-			CompactSlider(label: audioPlayer.syncPitchAndRate ? "Speed" : "Rate", value: $ratePosition, defaultValue: 0.5, format: { pos in
+			CompactSlider(label: audioPlayer.syncPitchAndRate ? "Speed" : "Rate", value: ratePositionBinding, defaultValue: 0.5, format: { pos in
 				String(format: "%.2f×", 0.5 * pow(4, pos))
-			}) { pos in
-				// Logarithmic map so 0.5 sits at 1.0× and the range is ~0.5×–2×.
-				audioPlayer.rate = Float(0.5 * pow(4, pos))
+			}) { _ in
 				audioPlayer.updateRate()
 			}
 			CompactSlider(label: "Pitch", value: pitchBinding, range: -12 ... 12, defaultValue: 0, format: { st in
 				String(format: "%+d st", Int(st.rounded()))
-			}) { st in
-				audioPlayer.pitchSemitones = Float(st.rounded())
+			}) { _ in
 				audioPlayer.updatePitch()
 			}
 			.disabled(audioPlayer.syncPitchAndRate)
@@ -69,14 +62,33 @@ struct ControlsView: View {
 		}
 	}
 
+	// The view-model is the source of truth for all slider values (they are
+	// per-track: switching tracks swaps them), so the sliders bind through it.
+
+	private var volumeBinding: Binding<Double> {
+		Binding(
+			get: { Double(audioPlayer.volume) },
+			set: { audioPlayer.volume = Float($0) }
+		)
+	}
+
+	/// Normalized 0…1 slider position ↔ rate, mapped logarithmically so 0.5
+	/// sits at 1.0× and the range is ~0.5×–2×.
+	private var ratePositionBinding: Binding<Double> {
+		Binding(
+			get: { Double(log2(audioPlayer.rate * 2) / 2) },
+			set: { audioPlayer.rate = Float(0.5 * pow(4, $0)) }
+		)
+	}
+
 	/// While synced, the (disabled) pitch slider tracks the shift the varispeed
 	/// implies; user edits only flow in independent mode.
 	private var pitchBinding: Binding<Double> {
 		Binding(
 			get: {
-				audioPlayer.syncPitchAndRate ? Double(audioPlayer.impliedSyncSemitones) : pitchSemitones
+				Double(audioPlayer.syncPitchAndRate ? audioPlayer.impliedSyncSemitones : audioPlayer.pitchSemitones)
 			},
-			set: { pitchSemitones = $0.rounded() }
+			set: { audioPlayer.pitchSemitones = Float($0.rounded()) }
 		)
 	}
 

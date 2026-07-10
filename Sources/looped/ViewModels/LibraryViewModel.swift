@@ -21,20 +21,84 @@ final class LibraryViewModel: ObservableObject {
 	@Published private(set) var tracks: [Track] = []
 	@Published var currentTrackID: UUID?
 
+	// MARK: Wiring (set at the composition root)
+
+	// Per-track parameter bridge to PlayerViewModel (kept callbacks so this VM
+	// never references the player VM): on a track switch the outgoing track's
+	// slider state is captured and the incoming track's state applied.
+	var captureParameters: (() -> TrackParameters)?
+	var applyParameters: ((TrackParameters) -> Void)?
+
 	/// The playback store — the library↔playback bridge; both this VM and
 	/// PlayerViewModel depend on it, neither references the other.
 	private let player: PlaybackCoordinator
 	/// Provider→URL resolution + folder expansion for the drop intents.
 	private let dropped: DroppedFileService
+	/// Persistence: the list + selection survive relaunch.
+	private let store: LibraryStore
 
 	/// Guards against overlapping play requests (a double-click fires two row
 	/// taps): while one load is in flight, further taps are dropped. Main-actor
 	/// mutated, so the check-and-set is race-free.
 	private var playInFlight = false
+	private var hasRestored = false
+	private var terminationObserver: NSObjectProtocol?
 
-	init(player: PlaybackCoordinator, dropped: DroppedFileService) {
+	init(player: PlaybackCoordinator, dropped: DroppedFileService, store: LibraryStore) {
 		self.player = player
 		self.dropped = dropped
+		self.store = store
+
+		// Slider tweaks are only stashed on a track switch — capture the last
+		// track's values (and everything else) once more on quit.
+		terminationObserver = NotificationCenter.default.addObserver(
+			forName: NSApplication.willTerminateNotification, object: nil, queue: .main
+		) { [weak self] _ in
+			self?.stashCurrentParameters()
+			self?.persist()
+		}
+	}
+
+	deinit {
+		if let terminationObserver {
+			NotificationCenter.default.removeObserver(terminationObserver)
+		}
+	}
+
+	// MARK: - Persistence
+
+	/// Repopulate the library from the store (missing files were already
+	/// dropped there) and reload the last current track — no autoplay. Latched
+	/// to run once — the hosting `.task` re-fires when the window is recreated.
+	func restore() async {
+		let alreadyRestored = await MainActor.run { () -> Bool in
+			if hasRestored { return true }
+			hasRestored = true
+			return false
+		}
+		guard !alreadyRestored,
+		      let snapshot = store.load(), !snapshot.tracks.isEmpty else { return }
+		await MainActor.run { tracks = snapshot.tracks }
+		if let id = snapshot.currentTrackID,
+		   let track = snapshot.tracks.first(where: { $0.id == id })
+		{
+			await load(track)
+		}
+	}
+
+	/// Write the current state through the store. Main-thread only (reads the
+	/// published state); the file is tiny, a synchronous full rewrite is fine.
+	private func persist() {
+		store.save(LibrarySnapshot(tracks: tracks, currentTrackID: currentTrackID))
+	}
+
+	/// Copy the player's live slider state into the current track's row, so a
+	/// track switch (or quit) keeps the values. Main-thread only.
+	private func stashCurrentParameters() {
+		guard let capture = captureParameters,
+		      let index = tracks.firstIndex(where: { $0.id == currentTrackID })
+		else { return }
+		tracks[index].parameters = capture()
 	}
 
 	// MARK: - Import
@@ -80,6 +144,7 @@ final class LibraryViewModel: ObservableObject {
 			} else {
 				tracks.append(contentsOf: newTracks)
 			}
+			persist()
 		}
 	}
 
@@ -87,6 +152,7 @@ final class LibraryViewModel: ObservableObject {
 	/// SwiftUI, so `Array.move` semantics apply.
 	@MainActor func move(fromOffsets: IndexSet, toOffset: Int) {
 		tracks.move(fromOffsets: fromOffsets, toOffset: toOffset)
+		persist()
 	}
 
 	// MARK: - Drag & drop intake
@@ -149,10 +215,18 @@ final class LibraryViewModel: ObservableObject {
 		}
 		guard !alreadyInFlight else { return false }
 
+		await MainActor.run { stashCurrentParameters() }
 		let loadedOK = await player.load(url: track.url)
 		await MainActor.run {
 			playInFlight = false
-			if loadedOK { currentTrackID = track.id }
+			if loadedOK {
+				currentTrackID = track.id
+				// Look the parameters up by id — the row may have been updated
+				// (a stash) since the caller captured `track`.
+				let parameters = tracks.first { $0.id == track.id }?.parameters ?? track.parameters
+				applyParameters?(parameters)
+				persist()
+			}
 		}
 		return loadedOK
 	}

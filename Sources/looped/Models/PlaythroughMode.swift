@@ -6,7 +6,7 @@
 //  A/B loop-point feature — an armed loop never lets the track "end").
 //
 
-enum PlaythroughMode: CaseIterable {
+enum PlaythroughMode: String, CaseIterable {
 	/// Restart this track from the beginning and keep playing.
 	case loop
 	/// Play the next track in library order (stops after the last one).

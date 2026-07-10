@@ -13,12 +13,15 @@ import Testing
 
 @MainActor
 struct LibraryViewModelTests {
-	private func makeSUT(files: AudioFileService = DefaultAudioFileService())
+	private func makeSUT(
+		files: AudioFileService = DefaultAudioFileService(),
+		store: FakeLibraryStore = FakeLibraryStore()
+	)
 		-> (library: LibraryViewModel, player: PlaybackCoordinator, playback: FakePlaybackService)
 	{
 		let playback = FakePlaybackService()
 		let player = PlaybackCoordinator(playback: playback, files: files)
-		let library = LibraryViewModel(player: player, dropped: DefaultDroppedFileService())
+		let library = LibraryViewModel(player: player, dropped: DefaultDroppedFileService(), store: store)
 		return (library, player, playback)
 	}
 
@@ -310,6 +313,87 @@ struct LibraryViewModelTests {
 	private func loopBuffer() throws -> AVAudioPCMBuffer {
 		let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 8000, channels: 1))
 		return try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 8000))
+	}
+
+	// MARK: - Persistence
+
+	@Test func restorePopulatesTheLibraryAndReloadsTheCurrentTrack() async throws {
+		let store = FakeLibraryStore()
+		let url = try AudioFixture.tempSine(seconds: 1)
+		var track = Track(id: UUID(), url: url, title: "t", duration: 1)
+		track.parameters = TrackParameters(rate: 2, pitchSemitones: 3, volume: 0.5, syncPitchAndRate: true)
+		store.snapshot = LibrarySnapshot(tracks: [track], currentTrackID: track.id)
+		let (library, player, playback) = makeSUT(store: store)
+		var applied: TrackParameters?
+		library.applyParameters = { applied = $0 }
+
+		await library.restore()
+
+		#expect(library.tracks == [track])
+		#expect(library.currentTrackID == track.id)
+		#expect(player.currentURL == url)
+		#expect(!player.isPlaying) // no autoplay on restore
+		#expect(playback.playCount == 0)
+		#expect(applied == track.parameters)
+	}
+
+	@Test func restoreRunsOnlyOnce() async throws {
+		let store = FakeLibraryStore()
+		let url = try AudioFixture.tempSine(seconds: 1)
+		let track = Track(id: UUID(), url: url, title: "t", duration: 1)
+		store.snapshot = LibrarySnapshot(tracks: [track], currentTrackID: nil)
+		let (library, _, _) = makeSUT(store: store)
+
+		await library.restore()
+		store.snapshot = LibrarySnapshot(tracks: [], currentTrackID: nil)
+		await library.restore() // window recreated → .task fires again
+
+		#expect(library.tracks == [track]) // not clobbered by the second restore
+	}
+
+	@Test func mutationsSaveTheLibrary() async throws {
+		let store = FakeLibraryStore()
+		let (library, _, _) = makeSUT(store: store)
+		let a = try AudioFixture.tempSine(seconds: 1)
+		let b = try AudioFixture.tempSine(seconds: 1)
+
+		await library.add(urls: [a, b])
+		#expect(store.saved?.tracks.map(\.url) == [a, b])
+
+		library.move(fromOffsets: [0], toOffset: 2)
+		#expect(store.saved?.tracks.map(\.url) == [b, a])
+	}
+
+	@Test func loadSavesTheNewSelection() async throws {
+		let store = FakeLibraryStore()
+		let (library, _, _) = makeSUT(store: store)
+		try await library.add(urls: [AudioFixture.tempSine(seconds: 1)])
+		let track = try #require(library.tracks.first)
+
+		await library.load(track)
+
+		#expect(store.saved?.currentTrackID == track.id)
+	}
+
+	@Test func switchingTracksStashesTheOutgoingParametersAndAppliesTheIncoming() async throws {
+		let store = FakeLibraryStore()
+		let (library, _, _) = makeSUT(store: store)
+		let tweaked = TrackParameters(rate: 1.5, pitchSemitones: -2, volume: 0.8, syncPitchAndRate: false)
+		var live = TrackParameters()
+		library.captureParameters = { live }
+		library.applyParameters = { live = $0 }
+		try await library.add(urls: [AudioFixture.tempSine(seconds: 1), AudioFixture.tempSine(seconds: 1)])
+		await library.load(library.tracks[0])
+
+		live = tweaked // the user moves sliders on track 0…
+		await library.load(library.tracks[1]) // …then switches away
+
+		#expect(library.tracks[0].parameters == tweaked) // stashed
+		#expect(live == TrackParameters()) // track 1 starts at defaults
+		#expect(store.saved?.tracks.first?.parameters == tweaked) // persisted
+
+		await library.load(library.tracks[0]) // and back
+		#expect(live == tweaked) // restored
 	}
 
 	// MARK: - Auto-advance

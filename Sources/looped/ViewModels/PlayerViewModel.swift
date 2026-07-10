@@ -24,11 +24,14 @@ final class PlayerViewModel: ObservableObject {
 	/// plain resampler — artifact-free, like tape speed. When off, `rate` and
 	/// `pitchSemitones` drive the time-pitch unit independently.
 	@Published var syncPitchAndRate = false
+	@Published var volume: Float = 1.0
 	@Published var loopStart: (TimeInterval?, AVAudioFramePosition?) = (nil, nil)
 	@Published var loopEnd: (TimeInterval?, AVAudioFramePosition?) = (nil, nil)
-	/// What happens at end of track. Session-only for now — persistence lands
-	/// with the library store (plan 06).
-	@Published var playthroughMode: PlaythroughMode = .advance
+	/// What happens at end of track. Persisted app-wide in UserDefaults
+	/// (per-track parameters go to the library store instead).
+	@Published var playthroughMode: PlaythroughMode = .advance {
+		didSet { defaults.set(playthroughMode.rawValue, forKey: Self.playthroughModeKey) }
+	}
 
 	// MARK: Transport projection (state lives in the coordinator)
 
@@ -74,13 +77,28 @@ final class PlayerViewModel: ObservableObject {
 	private let transport: PlaybackCoordinator
 	private let playback: PlaybackService
 	private let looping: LoopingService
+	private let defaults: UserDefaults
+
+	private static let playthroughModeKey = "playthroughMode"
 
 	private var transportChanges: AnyCancellable?
 
-	init(transport: PlaybackCoordinator, playback: PlaybackService, looping: LoopingService) {
+	init(
+		transport: PlaybackCoordinator,
+		playback: PlaybackService,
+		looping: LoopingService,
+		defaults: UserDefaults = .standard
+	) {
 		self.transport = transport
 		self.playback = playback
 		self.looping = looping
+		self.defaults = defaults
+
+		if let raw = defaults.string(forKey: Self.playthroughModeKey),
+		   let mode = PlaythroughMode(rawValue: raw)
+		{
+			playthroughMode = mode
+		}
 
 		// Re-publish the store's changes so views bound to this VM refresh.
 		transportChanges = transport.objectWillChange.sink { [weak self] in
@@ -188,8 +206,32 @@ final class PlayerViewModel: ObservableObject {
 		}
 	}
 
-	func updateVolume(volume: Float) {
+	func updateVolume() {
 		playback.setVolume(volume)
+	}
+
+	// MARK: - Per-track parameters
+
+	/// The slider state as a value — the library stashes it per track on a
+	/// switch and applies the incoming track's values (wired at the
+	/// composition root). Setting pushes the full state to the engine.
+	var currentParameters: TrackParameters {
+		get {
+			TrackParameters(
+				rate: rate,
+				pitchSemitones: pitchSemitones,
+				volume: volume,
+				syncPitchAndRate: syncPitchAndRate
+			)
+		}
+		set {
+			rate = newValue.rate
+			pitchSemitones = newValue.pitchSemitones
+			volume = newValue.volume
+			syncPitchAndRate = newValue.syncPitchAndRate
+			applyPitchAndRate()
+			playback.setVolume(volume)
+		}
 	}
 
 	// MARK: - Looping
