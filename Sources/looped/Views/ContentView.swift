@@ -21,7 +21,7 @@ struct ContentView: View {
 	var body: some View {
 		HStack(spacing: 0) {
 			if sidebarOpen {
-				Sidebar()
+				SidebarView()
 					.frame(width: clampedSidebarWidth)
 					.transition(.move(edge: .leading))
 				sidebarResizeHandle

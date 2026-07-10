@@ -99,7 +99,7 @@ One line per file; the *why* behind non-obvious designs lives in the next sectio
 | `ViewModels/WaveformViewModel.swift` | Waveform viewport state; scrub/snap-back. |
 | `ViewModels/ReorderState.swift` | Observable track-list drag state: reorder gap decisions, external drop gap. |
 | `Views/ContentView.swift` | Root layout: sidebar (collapsible, resizable, `@AppStorage`), header, waveform (= quick-load drop zone), bottom bar; hosts `KeyboardHandler`. |
-| `Views/Sidebar.swift` | Left panel: import button, empty-state drop zone, hosts `TrackListView`. |
+| `Views/SidebarView.swift` | Left panel: import button, empty-state drop zone, hosts `TrackListView`. |
 | `Views/TrackListView.swift` | Hand-rolled track list (+ private `TrackRow`, drop delegate): themed selection, drag-reorder, insertion indicator. |
 | `Views/ControlsView.swift` | Bottom bar: volume/rate/pitch sliders + sync checkbox, transport, A/B `LoopPanel` with nudge arrows. |
 | `Views/WaveformView.swift` | `WaveformDisplayView`: windowed two-layer waveform render, scrub highlight, A/B markers, center playhead. |
@@ -175,6 +175,9 @@ device/eyes/ears — see **`TESTING.md`** (repo root) for the manual QA checklis
   committing. (`--redundant-async tests-only` strips `async` from `await`-less test methods — fine
   under SwiftPM.)
 - **Theming**: use `enum Theme` tokens, never hardcoded `Color`/`NSColor` literals in views.
+- **Naming**: view structs carry a kind suffix (`…View`, or `…Row`/`…Panel` for parts); screen-scoped,
+  service-bearing observables are `…ViewModel`; small view-owned `@StateObject` observables are
+  `…State` (e.g. `ReorderState`).
 - **Workflow**: build + test, then present changes for the user's review — **commit only on their
   explicit go-ahead**.
 

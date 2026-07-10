@@ -1,5 +1,5 @@
 //
-//  Sidebar.swift
+//  SidebarView.swift
 //  looped
 //
 //  Collapsible left panel: import button + the track list (TrackListView),
@@ -8,7 +8,7 @@
 
 import SwiftUI
 
-struct Sidebar: View {
+struct SidebarView: View {
 	@EnvironmentObject var library: LibraryViewModel
 	@State private var emptyDropTargeted = false
 

@@ -4,7 +4,7 @@
 //
 //  Pure index math for the sidebar's hand-rolled row reordering and external
 //  drop insertion (the native List's drag visuals aren't themeable — see
-//  Sidebar in ContentView). Gap indices count the spaces between rows:
+//  TrackListView). Gap indices count the spaces between rows:
 //  0 = above the first row, count = below the last row — the same convention
 //  Array.move(fromOffsets:toOffset:) uses for its target offset.
 //
