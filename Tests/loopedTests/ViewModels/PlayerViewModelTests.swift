@@ -456,6 +456,77 @@ final class PlayerViewModelTests {
 		#expect(fake.lastPitchCents == 500)
 	}
 
+	// MARK: - Menu nudges
+
+	@Test func stepVolumeClampsToTheSliderRange() {
+		let vm = makeViewModel()
+
+		vm.stepVolume(by: -2)
+		#expect(vm.volume == 0)
+		#expect(fake.lastVolume == 0)
+
+		vm.stepVolume(by: 5)
+		#expect(vm.volume == 2)
+		#expect(fake.lastVolume == 2)
+
+		vm.stepVolume(by: -0.1)
+		#expect(abs(vm.volume - 1.9) <= 1e-6)
+	}
+
+	@Test func stepRateMovesBySemitonesAndClamps() {
+		let vm = makeViewModel()
+
+		vm.stepRate(bySemitones: 1)
+		#expect(abs(vm.rate - pow(2, 1.0 / 12)) <= 1e-6)
+		#expect(fake.lastRate == vm.rate)
+
+		vm.stepRate(bySemitones: 100)
+		#expect(vm.rate == 2)
+
+		vm.stepRate(bySemitones: -100)
+		#expect(vm.rate == 0.5)
+	}
+
+	@Test func stepPitchClampsAndIsRefusedWhileSynced() {
+		let vm = makeViewModel()
+
+		vm.stepPitch(bySemitones: 1)
+		#expect(vm.pitchSemitones == 1)
+		#expect(fake.lastPitchCents == 100)
+
+		vm.stepPitch(bySemitones: 100)
+		#expect(vm.pitchSemitones == 12)
+		vm.stepPitch(bySemitones: -100)
+		#expect(vm.pitchSemitones == -12)
+
+		vm.updateSync(true)
+		vm.stepPitch(bySemitones: 1)
+		#expect(vm.pitchSemitones == -12) // refused — no independent pitch in sync mode
+	}
+
+	@Test func resetRateAndPitchPushesNeutralValuesToTheEngine() {
+		let vm = makeViewModel()
+		vm.rate = 1.5
+		vm.pitchSemitones = -3
+		vm.updatePitch()
+
+		vm.resetRateAndPitch()
+		#expect(vm.rate == 1)
+		#expect(vm.pitchSemitones == 0)
+		#expect(fake.lastRate == 1)
+		#expect(fake.lastPitchCents == 0)
+	}
+
+	@Test func resetRateAndPitchWhileSyncedNeutralizesVarispeed() {
+		let vm = makeViewModel()
+		vm.rate = 1.5
+		vm.updateSync(true)
+		#expect(fake.lastVarispeed == 1.5)
+
+		vm.resetRateAndPitch()
+		#expect(fake.lastVarispeed == 1)
+	}
+
 	// MARK: - Derived
 
 	@Test func progressInPercent() async {

@@ -5,9 +5,6 @@ Build/run/test and architecture live in the repo-root `CLAUDE.md`.
 
 Ordered, reviewable slices:
 
-- **[10-native-menu.md](10-native-menu.md)** — menu bar overhaul: File → library actions
-  (import files/folder, remove selected), full Playback menu with shortcuts +
-  rate/pitch/volume/sync, new Loop menu, Edit menu removed. ⬜ (independent)
 - **[bug-fixes.md](bug-fixes.md)** — open bugs. Currently empty.
 
 **Mockups:** `mockup/2026-07-08-ui-layout.png` (sidebar list, controls layout),
@@ -34,4 +31,7 @@ library QoL (08: ⌫/⌦ removes the selected track — removing the loaded one 
 append; animated drop hint while dragging over the library) · error toasts (09:
 `ToastCenter` store + bottom-trailing `ToastStackView`, per-cause `LocalizedError`
 messages naming the file, one aggregated toast per import/drop action, engine-start
-failures surfaced, header error text removed).
+failures surfaced, header error text removed) · native menu overhaul (10: File ▸
+import/remove, View ▸ sidebar, full Playback menu with parameter step shortcuts, Loop
+menu owning the bare a/b/r equivalents, Edit menu removed; step intents in
+`PlayerViewModel`).

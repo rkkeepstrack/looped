@@ -123,7 +123,7 @@ One line per file; the *why* behind non-obvious designs lives in the next sectio
 
 | File | Role |
 |---|---|
-| `loopedApp.swift` | `@main`; composition root; window sizing, dark scheme; menu bar (`AppCommands`: File ▸ Open…, Playback menu). |
+| `loopedApp.swift` | `@main`; composition root; window sizing, dark scheme; installs `AppCommands`. |
 | `Models/LoadedAudio.swift` | Decoded audio value type. |
 | `Models/Track.swift` | Library entry + the shared supported-audio-type predicate. |
 | `Models/PlaythroughMode.swift` | End-of-track mode (loop / advance / stop) + cycle order. |
@@ -140,6 +140,7 @@ One line per file; the *why* behind non-obvious designs lives in the next sectio
 | `ViewModels/LibraryViewModel.swift` | Library state/intents; import panels (files/folder/open-and-load); play bridge; next/previous/auto-advance; restore/save + per-track parameter stash. |
 | `ViewModels/WaveformViewModel.swift` | Waveform viewport state; scrub/snap-back. |
 | `ViewModels/ReorderState.swift` | Observable track-list drag state: reorder gap decisions, external drop gap. |
+| `Views/AppCommands.swift` | Menu bar: File ▸ import/remove, View ▸ sidebar, full Playback menu, Loop menu; Edit removed. |
 | `Views/ContentView.swift` | Root layout: sidebar (collapsible, resizable, `@AppStorage`), header, waveform (= quick-load drop zone), minimap strip, bottom bar; installs `keyboardShortcuts`. |
 | `Views/SidebarView.swift` | Left panel: import-files + import-folder buttons, empty-state drop zone, hosts `TrackListView`. |
 | `Views/PlaythroughModeButton.swift` | Cycling end-of-track mode button (icon + tooltip per mode), hosted in the transport cluster. |
@@ -155,7 +156,7 @@ One line per file; the *why* behind non-obvious designs lives in the next sectio
 | `Views/Modifiers/HoverEffects.swift` | Button hover feedback: `hoverHighlight()` wash (borderless), `hoverBrightness()` (bordered). |
 | `Views/Modifiers/RightClick.swift` | `onRightClick` modifier: AppKit overlay claiming only right-button events (clears single loop points). |
 | `Views/Modifiers/ScrollObserver.swift` | `observeScrolling` modifier: scroll-wheel + mouse-drag capture → `WaveformViewModel`. |
-| `Views/Modifiers/KeyboardShortcuts.swift` | `keyboardShortcuts` modifier: key monitor; space play/pause, tab sidebar, a/b/r loop points, ⌫/⌦ remove track; ignores modal panels. |
+| `Views/Modifiers/KeyboardShortcuts.swift` | `keyboardShortcuts` modifier: key monitor; space play/pause, tab sidebar, ⌫/⌦ remove track; ignores modal panels. |
 | `Views/Modifiers/HoverActionLabel.swift` | Shared caption label that turns into an action ("Reset") on hover — slider labels + loop panel title. |
 | `Utils/TimeFormatter.swift` | `m:ss` time formatting. |
 | `Utils/RowInsertion.swift` | Pure gap-index math for list reorder/drop (gap N = space above row N; matches `Array.move` offsets). |
@@ -226,8 +227,24 @@ One line per file; the *why* behind non-obvious designs lives in the next sectio
   pause-while-paused is a no-op; spacebar keeps toggling. The sync checkbox became the link icon
   beside the sliders (yellow = synced); while synced the pitch slider is *hidden* and the pair
   collapses to one Speed slider. The menu bar (`AppCommands`) uses `@ObservedObject` view-models
-  so item titles/enablement stay live; File ▸ Open… (⌘O) → `openFilesAndLoad` (add all, load
-  first chosen).
+  so item titles/enablement stay live; File ▸ Import Files… (⌘O) → `openFilesAndLoad` (add all,
+  load first chosen).
+- **Menu bar (plan 10)**: app-shaped menus in `AppCommands` — File ▸ Import Files…/Import
+  Folder…/Remove Selected Track (⌘⌫, tracks `selectedTrackID`), View ▸ Toggle Sidebar (no
+  equivalent — see below; via the shared `@AppStorage("sidebarOpen")`), Playback (transport ⌘. / ⌘→ / ⌘←, the mode
+  Picker, and parameter nudges: volume ⌘↑/⌘↓ ±0.1, rate ⌘+/⌘− ±1 semitone in log space (`"+"`
+  matches the character — shifted layouts like US need ⌘⇧=; SwiftUI can't add AppKit's hidden
+  ⌘= alias), pitch
+  ⌥⌘+/⌥⌘− ±1 st **disabled while synced** like the hidden slider, reset, sync toggle ⌥⌘S), and
+  Loop (set/clear with live titles, clear-both, ±0.05 s nudges). The Edit menu is removed
+  (`CommandGroup(replacing: .undoRedo/.pasteboard) {}` — nothing uses the responder chain);
+  revisit if text fields ever appear. **Shortcut ownership**: two dispatch paths exist — the
+  local key monitor (space, tab, ⌫/⌦: keys menus can't own — AppKit hands a bare tab to the
+  focus loop before menu key-equivalent matching, so a `.tab` equivalent renders but never
+  fires; space/delete need per-context judgment) and menu `keyboardShortcut`s (everything
+  else, *including* the bare a/b/r, legal since the app has no text fields to steal keystrokes
+  from). The monitor swallows its keys before the menu system sees them, so a key bound in
+  both places double-fires or shadows — never do that.
 - **Library persistence**: JSON at `Application Support/looped/library.json` — tracks (plain
   paths: the `just bundle` app is unsigned/unsandboxed, so paths stay readable; revisit with
   security-scoped bookmarks if ever sandboxed), last selection, and each track's
@@ -276,7 +293,8 @@ Two layers, mirroring the source folders:
   `FakeLibraryStore`, `TooLongAudioFileService`, `SlowAudioFileService` for overlapping-request
   tests, `AudioFixture` temp WAVs): `PlaybackCoordinatorTests` (end-of-track via the exposed
   `tick()` — no run-loop spinning; load-failure toast), `ToastCenterTests` (queue/dismiss),
-  `PlayerViewModelTests` (incl. split play/pause and playthrough modes, driven via
+  `PlayerViewModelTests` (incl. split play/pause, playthrough modes, and the menu
+  step intents — volume/rate/pitch clamping, pitch refused while synced — driven via
   the coordinator's `tick()`; ephemeral `UserDefaults` suite per instance),
   `LibraryViewModelTests` (incl. next/previous/auto-advance, restore + parameter stash,
   intake toast aggregation),

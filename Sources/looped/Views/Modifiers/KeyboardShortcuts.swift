@@ -9,9 +9,12 @@ import AppKit
 import SwiftUI
 
 extension View {
-	/// Installs the app-wide keyboard shortcuts: space play/pause, tab sidebar,
-	/// "a"/"b" toggle the loop points, "r" resets both, ⌫/⌦ remove the
-	/// selected library track.
+	/// Installs the key-monitor shortcuts: space play/pause, tab sidebar, ⌫/⌦
+	/// remove the selected library track. These are the keys menus can't own —
+	/// AppKit gives tab to the focus loop before key-equivalent matching, space
+	/// and delete need per-context judgment. All other keys — including the
+	/// bare a/b/r — belong to the menu bar (`AppCommands`); never bind a key in
+	/// both places.
 	func keyboardShortcuts(
 		player: PlayerViewModel,
 		library: LibraryViewModel,
@@ -53,12 +56,6 @@ private struct KeyboardHandler: NSViewRepresentable {
 			audioPlayer.togglePlayPause()
 		case "\t":
 			onToggleSidebar()
-		case "a" where audioPlayer.audioURL != nil:
-			audioPlayer.toggleLoopStart()
-		case "b" where audioPlayer.audioURL != nil:
-			audioPlayer.toggleLoopEnd()
-		case "r" where audioPlayer.audioURL != nil:
-			audioPlayer.clearLoopPoints()
 		// Backspace (⌫, 0x7F) and forward delete (⌦, NSDeleteFunctionKey).
 		case "\u{7F}", "\u{F728}":
 			// Local NSEvent monitors fire on the main thread; the library VM is
