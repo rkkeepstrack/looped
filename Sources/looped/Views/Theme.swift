@@ -72,6 +72,9 @@ enum Theme {
 	static let panelBorder = Color.white.opacity(0.08)
 	/// Background wash for hovered borderless buttons (`hoverHighlight()`).
 	static let hoverWash = Color.white.opacity(0.12)
+	/// Toast cards cap their width so aggregated messages wrap instead of
+	/// spanning the window.
+	static let toastMaxWidth: CGFloat = 380
 
 	// MARK: Animation
 
