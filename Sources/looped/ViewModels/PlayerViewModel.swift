@@ -3,9 +3,10 @@
 //  looped
 //
 //  The presentation layer for playback (MVVM view-model / "Angular component"
-//  role): owns the @Published UI state and the refresh timer, and turns view
-//  intents into calls on the injected services. Holds no audio graph and no view
-//  layout — it coordinates PlaybackService, AudioFileService, and LoopingService.
+//  role): a thin projection over PlaybackCoordinator (source + transport +
+//  clock) that adds the playback *parameters* — loop points, rate/pitch/volume
+//  — and turns view intents into calls on the store and the injected services.
+//  Holds no audio graph and no view layout.
 //
 
 import AppKit
@@ -16,9 +17,6 @@ import UniformTypeIdentifiers
 final class PlayerViewModel: ObservableObject {
 	// MARK: Published state (what the views bind to)
 
-	@Published var isPlaying = false
-	@Published var currentTime: TimeInterval = 0
-	@Published var duration: TimeInterval?
 	@Published var rate: Float = 1.0
 	/// Transposition in semitones (−12…+12), independent of tempo.
 	@Published var pitchSemitones: Float = 0
@@ -28,26 +26,62 @@ final class PlayerViewModel: ObservableObject {
 	@Published var syncPitchAndRate = false
 	@Published var loopStart: (TimeInterval?, AVAudioFramePosition?) = (nil, nil)
 	@Published var loopEnd: (TimeInterval?, AVAudioFramePosition?) = (nil, nil)
-	@Published var currentFileName: String?
-	@Published var audioURL: URL?
+
+	// MARK: Transport projection (state lives in the coordinator)
+
+	var isPlaying: Bool {
+		transport.isPlaying
+	}
+
+	var duration: TimeInterval? {
+		transport.duration
+	}
+
+	var audioURL: URL? {
+		transport.currentURL
+	}
+
+	var currentFileName: String? {
+		transport.currentURL?.lastPathComponent
+	}
+
 	/// Non-nil when the last load failed (e.g. file too long); shown in the header.
-	@Published var loadError: String?
+	var loadError: String? {
+		transport.loadError
+	}
+
 	/// True while a file decode is in flight — the waveform shows a spinner.
-	@Published var isLoadingTrack = false
+	var isLoadingTrack: Bool {
+		transport.isLoadingTrack
+	}
 
-	// MARK: Injected services
+	var currentTime: TimeInterval {
+		get { transport.currentTime }
+		set { transport.currentTime = newValue }
+	}
 
+	// MARK: Injected store + services
+
+	private let transport: PlaybackCoordinator
 	private let playback: PlaybackService
-	private let files: AudioFileService
 	private let looping: LoopingService
 
-	private var loaded: LoadedAudio?
-	private var timer: Timer?
+	private var transportChanges: AnyCancellable?
 
-	init(playback: PlaybackService, files: AudioFileService, looping: LoopingService) {
+	init(transport: PlaybackCoordinator, playback: PlaybackService, looping: LoopingService) {
+		self.transport = transport
 		self.playback = playback
-		self.files = files
 		self.looping = looping
+
+		// Re-publish the store's changes so views bound to this VM refresh.
+		transportChanges = transport.objectWillChange.sink { [weak self] in
+			self?.objectWillChange.send()
+		}
+		// Loop points are per-track: reset them whenever the source changes.
+		transport.onSourceChanged = { [weak self] in
+			self?.loopStart = (nil, nil)
+			self?.loopEnd = (nil, nil)
+		}
 	}
 
 	// MARK: - Loading
@@ -64,57 +98,17 @@ final class PlayerViewModel: ObservableObject {
 	}
 
 	func load(url: URL) async {
-		await MainActor.run { self.isLoadingTrack = true }
-		do {
-			let loaded = try await files.load(url: url)
-			await MainActor.run {
-				self.loadError = nil
-				self.apply(loaded)
-				self.isLoadingTrack = false
-			}
-		} catch {
-			let message = (error as? LocalizedError)?.errorDescription ?? "Could not load file."
-			await MainActor.run {
-				self.loadError = message
-				self.isLoadingTrack = false
-			}
-		}
-	}
-
-	private func apply(_ loaded: LoadedAudio) {
-		self.loaded = loaded
-		playback.setSource(file: loaded.file, format: loaded.format)
-
-		currentFileName = loaded.url.lastPathComponent
-		audioURL = loaded.url
-		duration = loaded.duration
-		currentTime = 0
-		isPlaying = false
-		loopStart = (nil, nil)
-		loopEnd = (nil, nil)
-		stopTimer()
+		await transport.load(url: url)
 	}
 
 	// MARK: - Transport
 
 	func togglePlayPause() {
-		guard loaded != nil else { return }
-		if isPlaying {
-			playback.pause()
-			isPlaying = false
-			stopTimer()
-		} else {
-			playback.play()
-			isPlaying = true
-			startTimer()
-		}
+		isPlaying ? transport.pause() : transport.play()
 	}
 
 	func stop() {
-		playback.stop()
-		isPlaying = false
-		currentTime = 0
-		stopTimer()
+		transport.stop()
 	}
 
 	/// Seek to `time`; returns `true` if it actually seeked. Returns `false` (a no-op)
@@ -124,8 +118,7 @@ final class PlayerViewModel: ObservableObject {
 	func jumpTo(time: TimeInterval) -> Bool {
 		guard !playback.isLooping else { return false }
 		guard time >= 0, let duration, time <= duration else { return false }
-		playback.seek(to: time)
-		currentTime = time
+		transport.seek(to: time)
 		return true
 	}
 
@@ -201,7 +194,7 @@ final class PlayerViewModel: ObservableObject {
 	}
 
 	private func framePosition(for time: TimeInterval?) -> AVAudioFramePosition? {
-		guard let loaded, let time else { return nil }
+		guard let loaded = transport.loaded, let time else { return nil }
 		return AVAudioFramePosition(time * loaded.format.sampleRate)
 	}
 
@@ -215,7 +208,7 @@ final class PlayerViewModel: ObservableObject {
 	}
 
 	private func activateLoop(startFrame: AVAudioFramePosition, endFrame: AVAudioFramePosition) {
-		guard let loaded,
+		guard let loaded = transport.loaded,
 		      let buffer = looping.makeLoopBuffer(from: loaded.buffer, startFrame: startFrame, endFrame: endFrame)
 		else { return }
 
@@ -230,10 +223,9 @@ final class PlayerViewModel: ObservableObject {
 	}
 
 	/// Uncached read of the playback clock, for per-display-frame rendering
-	/// (`TimelineView`). Unlike `currentTime` (published on the 0.03 s timer for
-	/// labels), this doesn't invalidate observers.
+	/// (`TimelineView`) — doesn't invalidate observers.
 	func livePlaybackTime() -> TimeInterval {
-		isPlaying ? playback.currentTime() : currentTime
+		transport.livePlaybackTime()
 	}
 
 	// MARK: - Derived
@@ -245,28 +237,5 @@ final class PlayerViewModel: ObservableObject {
 
 	func getDuration() -> TimeInterval? {
 		duration
-	}
-
-	// MARK: - Timer
-
-	private func startTimer() {
-		stopTimer()
-		let timer = Timer(timeInterval: 0.03, repeats: true) { [weak self] _ in
-			guard let self else { return }
-			currentTime = playback.currentTime()
-			// Looping never "ends"; only stop at the end of linear playback.
-			if !playback.isLooping, let duration, currentTime >= duration {
-				stop()
-			}
-		}
-		// `.common` so the waveform keeps updating during AppKit event tracking
-		// (button clicks, scrolling) — `.default`-mode timers pause while tracking.
-		RunLoop.main.add(timer, forMode: .common)
-		self.timer = timer
-	}
-
-	private func stopTimer() {
-		timer?.invalidate()
-		timer = nil
 	}
 }

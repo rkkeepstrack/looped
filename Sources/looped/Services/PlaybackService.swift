@@ -22,6 +22,8 @@ protocol PlaybackService: AnyObject {
 	func scheduleLoop(_ buffer: AVAudioPCMBuffer, startTime: TimeInterval, length: TimeInterval)
 	/// Leave loop mode and resume normal full-file playback from `time`.
 	func clearLoop(resumeAt time: TimeInterval)
+	/// Jump back to the armed loop's A point (stays looping); no-op when not looping.
+	func restartLoop()
 	var isLooping: Bool { get }
 	/// Current playback position in the source timeline (folded into [A, B] while looping).
 	func currentTime() -> TimeInterval
@@ -159,6 +161,11 @@ final class AVPlaybackService: PlaybackService {
 		isLooping = false
 		loopBuffer = nil
 		seek(to: time)
+	}
+
+	func restartLoop() {
+		guard isLooping, let loopBuffer else { return }
+		scheduleLoop(loopBuffer, startTime: loopStartTime, length: loopLength)
 	}
 
 	// MARK: - Clock

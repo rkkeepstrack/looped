@@ -15,16 +15,27 @@ struct loopedApp: App {
 	@StateObject private var waveform = WaveformViewModel(service: DefaultWaveformService())
 
 	init() {
+		let playback = AVPlaybackService()
+		let transport = PlaybackCoordinator(
+			playback: playback,
+			files: DefaultAudioFileService()
+		)
 		let player = PlayerViewModel(
-			playback: AVPlaybackService(),
-			files: DefaultAudioFileService(),
+			transport: transport,
+			playback: playback,
 			looping: DefaultLoopingService()
 		)
-		_player = StateObject(wrappedValue: player)
-		_library = StateObject(wrappedValue: LibraryViewModel(
-			player: player,
+		let library = LibraryViewModel(
+			player: transport,
 			dropped: DefaultDroppedFileService()
-		))
+		)
+		// End-of-track → the library picks and plays the next track (auto-advance).
+		// Weak: the coordinator must not retain the library that retains it.
+		transport.onTrackEnded = { [weak library] in
+			Task { await library?.trackEnded() }
+		}
+		_player = StateObject(wrappedValue: player)
+		_library = StateObject(wrappedValue: library)
 	}
 
 	var body: some Scene {

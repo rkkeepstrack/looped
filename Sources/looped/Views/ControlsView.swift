@@ -9,6 +9,7 @@ import SwiftUI
 
 struct ControlsView: View {
 	@EnvironmentObject var audioPlayer: PlayerViewModel
+	@EnvironmentObject var library: LibraryViewModel
 	@EnvironmentObject var offsetCalculator: WaveformViewModel
 
 	@State private var ratePosition: Double = 0.5 // normalized 0…1 (0.5 → 1.0×)
@@ -84,6 +85,17 @@ struct ControlsView: View {
 	private var transport: some View {
 		HStack(spacing: 14) {
 			Button {
+				Task { await library.previous() }
+			} label: {
+				Image(systemName: "backward.fill")
+					.frame(width: 28, height: 24)
+			}
+			.buttonStyle(.bordered)
+			.controlSize(.large)
+			.disabled(library.tracks.count < 2)
+			.help("Previous track (restarts when > 3 s in)")
+
+			Button {
 				audioPlayer.togglePlayPause()
 			} label: {
 				Image(systemName: audioPlayer.isPlaying ? "pause.fill" : "play.fill")
@@ -92,6 +104,17 @@ struct ControlsView: View {
 			.buttonStyle(.borderedProminent)
 			.tint(Theme.accent)
 			.controlSize(.large)
+
+			Button {
+				Task { await library.next() }
+			} label: {
+				Image(systemName: "forward.fill")
+					.frame(width: 28, height: 24)
+			}
+			.buttonStyle(.bordered)
+			.controlSize(.large)
+			.disabled(library.tracks.count < 2)
+			.help("Next track")
 
 			Button {
 				audioPlayer.stop()

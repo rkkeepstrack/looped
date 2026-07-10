@@ -3,10 +3,11 @@
 //  looped
 //
 //  The track library: holds the sidebar's track list, owns the import panel
-//  (import is library UI, not playback), and bridges row taps to playback by
-//  delegating to PlayerViewModel. Metadata for the list comes from AVURLAsset
-//  (cheap container read) — the full decode still happens per play via
-//  AudioFileService, so the 20-min limit / loadError path applies on play.
+//  (import is library UI, not playback), and bridges row taps / next-previous /
+//  auto-advance to playback via PlaybackCoordinator. Metadata for the list
+//  comes from AVURLAsset (cheap container read) — the full decode still
+//  happens per play via AudioFileService, so the 20-min limit / loadError
+//  path applies on play.
 //
 
 import AppKit
@@ -20,9 +21,9 @@ final class LibraryViewModel: ObservableObject {
 	@Published private(set) var tracks: [Track] = []
 	@Published var currentTrackID: UUID?
 
-	/// View-model → view-model is deliberate here: this is the bridge between
-	/// the library and playback; the services underneath stay UI-free.
-	private let player: PlayerViewModel
+	/// The playback store — the library↔playback bridge; both this VM and
+	/// PlayerViewModel depend on it, neither references the other.
+	private let player: PlaybackCoordinator
 	/// Provider→URL resolution + folder expansion for the drop intents.
 	private let dropped: DroppedFileService
 
@@ -31,7 +32,7 @@ final class LibraryViewModel: ObservableObject {
 	/// mutated, so the check-and-set is race-free.
 	private var playInFlight = false
 
-	init(player: PlayerViewModel, dropped: DroppedFileService) {
+	init(player: PlaybackCoordinator, dropped: DroppedFileService) {
 		self.player = player
 		self.dropped = dropped
 	}
@@ -139,19 +140,74 @@ final class LibraryViewModel: ObservableObject {
 	/// Load the track into the player/waveform (no autoplay — the transport
 	/// starts playback); marks it current only if the load succeeded (e.g. a
 	/// >20-min file keeps the previous selection and shows loadError).
-	func load(_ track: Track) async {
+	@discardableResult
+	func load(_ track: Track) async -> Bool {
 		let alreadyInFlight = await MainActor.run { () -> Bool in
 			if playInFlight { return true }
 			playInFlight = true
 			return false
 		}
-		guard !alreadyInFlight else { return }
+		guard !alreadyInFlight else { return false }
 
-		await player.load(url: track.url)
+		let loadedOK = await player.load(url: track.url)
 		await MainActor.run {
 			playInFlight = false
-			guard player.loadError == nil else { return }
-			currentTrackID = track.id
+			if loadedOK { currentTrackID = track.id }
+		}
+		return loadedOK
+	}
+
+	// MARK: - Next / previous / auto-advance
+
+	// The *decisions* (ordering, clamping, the 3 s restart rule) live in
+	// `TrackNavigation`; these intents only gather state and execute the move.
+
+	/// Step to the next track in list order; clamped — a no-op on the last
+	/// track. Preserves the play state (playing stays playing, paused stays paused).
+	func next() async {
+		let move = await MainActor.run { TrackNavigation.next(in: tracks, after: currentTrackID) }
+		await perform(move)
+	}
+
+	/// Step back in list order — or restart the current material (> 3 s in, or
+	/// already on the first track). Preserves the play state.
+	func previous() async {
+		let move = await MainActor.run {
+			TrackNavigation.previous(
+				in: tracks,
+				before: currentTrackID,
+				currentTime: player.currentTime,
+				isLoaded: player.currentURL != nil
+			)
+		}
+		await perform(move)
+	}
+
+	/// End-of-track auto-advance (wired to `PlaybackCoordinator.onTrackEnded`):
+	/// play the next track; on the last track the transport just stays stopped.
+	func trackEnded() async {
+		guard case let .change(target)? = await MainActor.run(body: {
+			TrackNavigation.next(in: tracks, after: currentTrackID)
+		}) else { return }
+		if await load(target) {
+			await MainActor.run { player.play() }
+		}
+	}
+
+	/// Execute a navigation move. A change carries the play state over: if
+	/// audio was playing, the new track keeps playing; if paused, it loads paused.
+	private func perform(_ move: TrackNavigation.Move?) async {
+		switch move {
+		case .restart:
+			// Restarts the armed loop at A, or the track at 0.
+			await MainActor.run { player.restart() }
+		case let .change(target):
+			let wasPlaying = await MainActor.run { player.isPlaying }
+			if await load(target), wasPlaying {
+				await MainActor.run { player.play() }
+			}
+		case nil:
+			break
 		}
 	}
 
