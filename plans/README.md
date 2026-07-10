@@ -10,6 +10,10 @@ Ordered, reviewable slices:
 - **[09-error-toasts.md](09-error-toasts.md)** — general error handling: themed toasts,
   meaningful messages, per-action aggregation, no silent failures. ⬜ (best last-ish —
   touches most layers)
+- **[10-native-menu.md](10-native-menu.md)** — menu bar overhaul: File → library actions
+  (import files/folder, remove selected), full Playback menu with shortcuts +
+  rate/pitch/volume/sync, new Loop menu, Edit menu removed. ⬜ (remove-selected part
+  depends on 08)
 - **[bug-fixes.md](bug-fixes.md)** — open bugs. Currently empty.
 
 **Mockups:** `mockup/2026-07-08-ui-layout.png` (sidebar list, controls layout),

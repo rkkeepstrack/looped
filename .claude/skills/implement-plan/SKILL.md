@@ -7,7 +7,7 @@ The plan file is given as the argument (e.g. `05-loop-end-modes.md`). If no argu
 
 Read `plans/$ARGUMENTS`, create a new Branch under `feature/{{name-of-the-feature}}` and implement it. If there are questions before the implementation or decisions to be made, interview the user on them first.
 
-After the implementation, review the written code from 2 different angles:
+After the implementation, review the written code from 2 different angles - please do that by fanning out subagents:
 
 **First review:** the code on a technical basis — slicing, best practices, whether it's designed like Swift intended, and if not, why.
 

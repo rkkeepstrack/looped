@@ -1,15 +1,1 @@
-{
-  "hooks": {
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/check-claude-md.sh\"",
-            "statusMessage": "Checking CLAUDE.md is in sync"
-          }
-        ]
-      }
-    ]
-  }
-}
+{}

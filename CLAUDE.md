@@ -275,8 +275,6 @@ device/eyes/ears — see **`TESTING.md`** (repo root) for the manual QA checklis
 ## Maintenance — keep this file current
 
 After **any** change that affects architecture, the file map, build/run commands, dependencies, or
-conventions, **update the relevant section in the same change**. Enforced by a `Stop` hook in
-`.claude/settings.json`: if Swift sources change but `CLAUDE.md` doesn't, the turn is blocked with
-a reminder. Doc-only turns are unaffected. **Keep the altitude**: file-map entries stay one line
+conventions, **update the relevant section in the same change**. **Keep the altitude**: file-map entries stay one line
 (what, not how — the code answers "how"); durable "why"s go in *Design rationale & gotchas*;
 don't mirror implementation detail that churns with every commit.
